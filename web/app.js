@@ -3,7 +3,7 @@ let state = {
   projects: [],
   testers: [],
   profile: {
-    name: 'Ankit B.',
+    name: 'Himanshu Choudhary',
     role: 'HR Manager',
     avatar: '' // Base64 data URL
   },
@@ -103,6 +103,10 @@ function loadState() {
   if (saved) {
     try {
       state = JSON.parse(saved);
+      // Migration: if the cached user name is the old default 'Ankit B.', reset to Himanshu Choudhary and clean dummy data
+      if (state.profile && (state.profile.name === 'Ankit B.' || !state.profile.name)) {
+        initializeDefaults();
+      }
       if (!state.bugs) state.bugs = [];
     } catch (e) {
       console.error('Failed to parse saved state, using defaults', e);
@@ -120,90 +124,16 @@ function loadState() {
 function initializeDefaults() {
   state.theme = 'dark';
   state.profile = {
-    name: 'Ankit B.',
+    name: 'Himanshu Choudhary',
     role: 'HR Manager',
     avatar: ''
   };
-  state.testers = [
-    { id: 't1', name: 'John Doe', email: 'john.doe@adiyogi.com', role: 'QA Tester' },
-    { id: 't2', name: 'Jane Smith', email: 'jane.smith@adiyogi.com', role: 'Automation Tester' },
-    { id: 't3', name: 'Bob Johnson', email: 'bob.johnson@adiyogi.com', role: 'Performance Tester' },
-    { id: 't4', name: 'Alice Brown', email: 'alice.brown@adiyogi.com', role: 'Security Tester' }
-  ];
-  state.projects = [
-    { id: 'p1', name: 'Adiyogi Mobile App', testerId: 't2', priority: 'High', status: 'In Progress', desc: 'Testing the Flutter mobile application notifications and booking flows.', created: '2026-06-01' },
-    { id: 'p2', name: 'AYT Bug Tracker Web', testerId: 't1', priority: 'Medium', status: 'Pending', desc: 'Dashboard design and functional validation.', created: '2026-06-05' },
-    { id: 'p3', name: 'Security Audit 2026', testerId: 't4', priority: 'Critical', status: 'Completed', desc: 'Perform full penetration testing and secure API endpoints.', created: '2026-05-20' }
-  ];
+  state.testers = [];
+  state.projects = [];
   state.notifications = [
-    { id: 'n1', type: 'info', text: 'Welcome to Adiyogi Bug Tracker Dashboard!', time: '1 hour ago', read: false },
-    { id: 'n2', type: 'success', text: 'Project "Security Audit 2026" marked as Completed.', time: '2 hours ago', read: true },
-    { id: 'n3', type: 'warning', text: 'Tester "Jane Smith" assigned to "Adiyogi Mobile App".', time: '1 day ago', read: true }
+    { id: 'n1', type: 'info', text: 'Welcome to Adiyogi Bug Tracker Dashboard, Himanshu!', time: 'Just now', read: false }
   ];
-  state.bugs = [
-    {
-      id: 'b1',
-      projectId: 'p1',
-      title: 'App crashes on opening notification panel',
-      type: 'App',
-      severity: 'Critical',
-      status: 'Pending',
-      developer: 'Ankit B.',
-      desc: '1. Receive notification\n2. Open notification bar\n3. Click notification\n4. App crashes completely.',
-      screenshot: '',
-      comments: [
-        { author: 'System', text: 'Bug reported by Tester.', time: '2026-06-02' }
-      ],
-      created: '2026-06-02'
-    },
-    {
-      id: 'b2',
-      projectId: 'p1',
-      title: 'Delay in loading booking history list',
-      type: 'App',
-      severity: 'Medium',
-      status: 'In Progress',
-      developer: 'John Dev',
-      desc: 'Booking list takes up to 5 seconds to show loading indicator or contents. Needs API caching.',
-      screenshot: '',
-      comments: [
-        { author: 'Ankit B.', text: 'Checking endpoint response times on backend.', time: '2026-06-03 14:00' },
-        { author: 'John Dev', text: 'Adding Redis caching layer tomorrow.', time: '2026-06-03 16:30' }
-      ],
-      created: '2026-06-03'
-    },
-    {
-      id: 'b3',
-      projectId: 'p1',
-      title: 'Profile details overlapping on small screen sizes',
-      type: 'App',
-      severity: 'Low',
-      status: 'Done',
-      developer: 'Sarah Dev',
-      desc: 'On screen width < 360px, the profile name and edit button overlap.',
-      screenshot: '',
-      comments: [
-        { author: 'Sarah Dev', text: 'Adjusted padding and responsive wrap.', time: '2026-06-02' }
-      ],
-      created: '2026-06-01'
-    },
-    {
-      id: 'b4',
-      projectId: 'p2',
-      title: 'Add project modal input borders not matching style guidelines',
-      type: 'Web',
-      severity: 'Medium',
-      status: 'Re-open',
-      developer: 'Sarah Dev',
-      desc: 'Input borders are generic gray instead of matching var(--border) variables.',
-      screenshot: '',
-      comments: [
-        { author: 'Sarah Dev', text: 'Fixed border variables in index.css.', time: '2026-06-06' },
-        { author: 'John Doe', text: 'Still fails in light mode. Border is not visible on light background.', time: '2026-06-07' }
-      ],
-      created: '2026-06-06'
-    }
-  ];
+  state.bugs = [];
   saveState();
 }
 
