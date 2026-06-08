@@ -123,11 +123,7 @@ async function saveServerState() {
 
 async function fetchServerState() {
   try {
-    // Timeout after 2 seconds so the UI is never blocked
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const response = await fetch('/api/state', { signal: controller.signal });
-    clearTimeout(timeout);
+    const response = await fetch('/api/state');
     if (!response.ok) return false;
     const serverState = await response.json();
     if (serverState && serverState.status !== 'offline' && !serverState.empty) {
@@ -136,7 +132,7 @@ async function fetchServerState() {
       return true;
     }
   } catch (err) {
-    // Timeout or network failure — fail silently
+    console.log('Vercel KV server API fallback');
   }
   return false;
 }
@@ -2091,21 +2087,39 @@ function applyRoleUI() {
 }
 
 // ===== Page Initialization =====
-window.addEventListener('DOMContentLoaded', () => {
-  // ── Render immediately from localStorage — no waiting ──────────────────
+window.addEventListener('DOMContentLoaded', async () => {
   loadState();
   initTheme();
   applyRoleUI();
+  
+  // Try fetching Vercel KV state
+  const gotServerState = await fetchServerState();
+  if (gotServerState) {
+    showToast('State loaded from Vercel KV cloud!', 'success');
+  } else {
+    // Try connecting to Supabase database
+    const connected = initSupabase();
+    if (connected) {
+      showToast('Connecting to cloud database...', 'info');
+      const success = await fetchCloudData();
+      if (success) {
+        showToast('Cloud Database Connected & Synced!', 'success');
+      } else {
+        showToast('Cloud connection failed. Using local storage.', 'warning');
+      }
+    }
+  }
+
   renderAll();
   initCanvasParticles();
 
-  // ── Logout button ──────────────────────────────────────────────────────
+  // ===== Logout =====
   document.getElementById('logoutBtn').addEventListener('click', () => {
     sessionStorage.clear();
     window.location.replace('login.html');
   });
 
-  // ── Expose functions used in inline HTML onclick attributes ────────────
+  // Expose functions to window for onclick attributes in html string rendering
   window.openProjectModal = openProjectModal;
   window.confirmDeleteProject = confirmDeleteProject;
   window.deleteTester = deleteTester;
@@ -2116,31 +2130,4 @@ window.addEventListener('DOMContentLoaded', () => {
   window.openBugModal = openBugModal;
   window.deleteBug = deleteBug;
   window.openLightbox = openLightbox;
-
-  // ── Cloud sync runs silently in background after UI is visible ─────────
-  (async () => {
-    try {
-      const gotServerState = await fetchServerState();
-      if (gotServerState) {
-        applyRoleUI();
-        renderAll();
-        showToast('Synced from cloud!', 'success');
-        return;
-      }
-
-      // Fall back to Supabase if configured
-      const connected = initSupabase();
-      if (connected) {
-        const success = await fetchCloudData();
-        if (success) {
-          applyRoleUI();
-          renderAll();
-          showToast('Cloud Database Synced!', 'success');
-        }
-      }
-    } catch (e) {
-      // Cloud sync failures should never affect the UI
-      console.log('Background cloud sync skipped:', e.message);
-    }
-  })();
 });
