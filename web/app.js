@@ -9,7 +9,7 @@ if (!_sessionRole) {
   window.location.replace('login.html');
 }
 
-const currentUserRole = _sessionRole || 'hr'; // 'hr' | 'tester'
+const currentUserRole = _sessionRole || 'hr'; // 'hr' | 'tester' | 'developer'
 const isHR = currentUserRole === 'hr';
 
 // ===== State Management =====
@@ -18,7 +18,7 @@ let state = {
   testers: [],
   profile: {
     name: 'Himanshu Choudhary',
-    role: 'HR Manager',
+    role: 'Admin',
     avatar: '' // Base64 data URL
   },
   notifications: [],
@@ -978,7 +978,10 @@ function renderProjectDetailsView(projectId) {
   document.getElementById('detailProjectStatus').textContent = project.status;
 
   // Calculate statistics
-  const projectBugs = state.bugs.filter(b => b.projectId === projectId);
+  let projectBugs = state.bugs.filter(b => b.projectId === projectId);
+  if (currentUserRole === 'developer') {
+    projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+  }
   const totalBugs = projectBugs.length;
 
   document.getElementById('detailProjectBugsCount').textContent = totalBugs;
@@ -1023,6 +1026,9 @@ function renderProjectBugsList(projectId) {
 
   // Filter project bugs
   let projectBugs = state.bugs.filter(b => b.projectId === projectId);
+  if (currentUserRole === 'developer') {
+    projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+  }
 
   // Apply Status Filter
   if (activeBugFilter !== 'all') {
@@ -1098,6 +1104,7 @@ function renderProjectBugsList(projectId) {
             </select>
             <span style="font-size: 0.78rem; color: var(--text-secondary);"><strong style="color: var(--text-primary);">Dev:</strong> ${b.developer || 'Unassigned'}</span>
           </div>
+          ${(currentUserRole !== 'developer') ? `
           <div class="bug-action-btns" onclick="event.stopPropagation();">
             <button class="bug-action-btn" onclick="openBugModal('${b.projectId}', '${b.id}')" title="Edit Bug Details">
               <span class="material-icons-round" style="font-size: 1.1rem;">edit</span>
@@ -1105,7 +1112,7 @@ function renderProjectBugsList(projectId) {
             <button class="bug-action-btn delete" onclick="deleteBug('${b.id}')" title="Delete Bug">
               <span class="material-icons-round" style="font-size: 1.1rem;">delete</span>
             </button>
-          </div>
+          </div>` : ''}
           <span class="material-icons-round expand-arrow" style="color: var(--text-secondary); transition: transform 0.2s;">keyboard_arrow_down</span>
         </div>
         
@@ -1232,6 +1239,20 @@ function openBugModal(projectId, bugId = null) {
   const statusLabel = document.getElementById('bugScreenshotStatus');
 
   if (!modal) return;
+
+  // Populate developer dropdown dynamically
+  const devSelect = document.getElementById('bugDeveloper');
+  if (devSelect) {
+    let optionsHtml = '<option value="Unassigned">Unassigned</option>';
+    optionsHtml += '<option value="Himanshu Choudhary">Himanshu Choudhary</option>';
+    
+    // Add all testers/developers from state.testers
+    state.testers.forEach(t => {
+      optionsHtml += `<option value="${t.name}">${t.name} (${t.role})</option>`;
+    });
+    
+    devSelect.innerHTML = optionsHtml;
+  }
 
   // Setup form values
   pIdInput.value = projectId;
@@ -1416,9 +1437,10 @@ function closeLightbox() {
 
 // ===== Calculation Helpers =====
 function calculateProgressPercent() {
-  const total = state.projects.length;
+  const visible = getVisibleProjects();
+  const total = visible.length;
   if (total === 0) return 0;
-  const completed = state.projects.filter(p => p.status === 'Completed').length;
+  const completed = visible.filter(p => p.status === 'Completed').length;
   return Math.round((completed / total) * 100);
 }
 
@@ -1469,10 +1491,11 @@ function drawProgressRing(percent) {
 
 // Render Stats Cards
 function renderStats() {
-  const total = state.projects.length;
-  const pending = state.projects.filter(p => p.status === 'Pending').length;
-  const inProgress = state.projects.filter(p => p.status === 'In Progress').length;
-  const completed = state.projects.filter(p => p.status === 'Completed').length;
+  const visible = getVisibleProjects();
+  const total = visible.length;
+  const pending = visible.filter(p => p.status === 'Pending').length;
+  const inProgress = visible.filter(p => p.status === 'In Progress').length;
+  const completed = visible.filter(p => p.status === 'Completed').length;
 
   document.getElementById('totalCount').textContent = total;
   document.getElementById('pendingCount').textContent = pending;
@@ -1487,7 +1510,7 @@ function renderRecentProjects() {
 
   const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
 
-  let listProjects = [...state.projects].reverse();
+  let listProjects = getVisibleProjects().reverse();
 
   if (searchQuery) {
     listProjects = listProjects.filter(p => {
@@ -1521,7 +1544,10 @@ function renderRecentProjects() {
     if (p.status === 'Completed') statusClass = 'completed';
 
     // Count bugs
-    const projectBugs = state.bugs.filter(b => b.projectId === p.id);
+    let projectBugs = state.bugs.filter(b => b.projectId === p.id);
+    if (currentUserRole === 'developer') {
+      projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+    }
     const pendingBugs = projectBugs.filter(b => b.status === 'Pending' || b.status === 'Re-open').length;
 
     return `
@@ -1574,8 +1600,12 @@ function renderTimeline() {
 let activeFilter = 'all';
 
 function getVisibleProjects() {
-  // Tester sees only all projects (HR added), but cannot edit/delete
-  // HR sees all projects
+  if (currentUserRole === 'developer') {
+    // Only projects that have at least one bug assigned to this developer
+    const devBugs = state.bugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+    const projectIds = new Set(devBugs.map(b => b.projectId));
+    return state.projects.filter(p => projectIds.has(p.id));
+  }
   return [...state.projects];
 }
 
@@ -2044,7 +2074,7 @@ function applyRoleUI() {
   const roleBadge = document.getElementById('roleBadge');
 
   // ── Patch state.profile with session data so renderProfile() picks up the
-  //    correct name & role for both HR and Tester logins ──────────────────────
+  //    correct name & role for both HR/Admin, Tester and Developer logins ────
   if (_sessionName) {
     state.profile.name = _sessionName;
   }
@@ -2055,10 +2085,15 @@ function applyRoleUI() {
   // Update role badge text and color
   if (roleBadge) {
     if (role === 'hr') {
-      roleBadge.textContent = 'HR';
+      roleBadge.textContent = 'Admin';
       roleBadge.style.background = 'rgba(99,102,241,.15)';
       roleBadge.style.color = 'var(--accent)';
       roleBadge.style.border = '1px solid rgba(99,102,241,.25)';
+    } else if (role === 'developer') {
+      roleBadge.textContent = 'Developer';
+      roleBadge.style.background = 'rgba(236,72,153,.15)';
+      roleBadge.style.color = 'var(--pink)';
+      roleBadge.style.border = '1px solid rgba(236,72,153,.25)';
     } else {
       roleBadge.textContent = 'Tester';
       roleBadge.style.background = 'rgba(34,197,94,.12)';
@@ -2067,7 +2102,7 @@ function applyRoleUI() {
     }
   }
 
-  // Show/hide HR-only nav items
+  // Show/hide HR-only nav items (testers, reports)
   document.querySelectorAll('.hr-only').forEach(el => {
     el.style.display = isHR ? '' : 'none';
   });
@@ -2077,12 +2112,36 @@ function applyRoleUI() {
     el.style.display = isHR ? '' : 'none';
   });
 
-  // Tester: disable profile edit click (tester sees their own name but can't edit HR settings)
+  // Disable profile edit click for non-admin
   const topUserProfile = document.getElementById('topUserProfile');
   const sidebarUserProfile = document.getElementById('sidebarUserProfile');
   if (!isHR) {
     if (topUserProfile) topUserProfile.style.cursor = 'default';
     if (sidebarUserProfile) sidebarUserProfile.style.pointerEvents = 'none';
+  }
+
+  // Hide Report Bug button for developer
+  const addBugBtn = document.getElementById('addBugBtn');
+  if (addBugBtn) {
+    addBugBtn.style.display = (role === 'developer') ? 'none' : '';
+  }
+
+  // Auto-register developer in the testers/team list if not already there
+  if (role === 'developer' && state.profile.name) {
+    const devName = state.profile.name;
+    const devSpecialty = sessionStorage.getItem('ayt_dev_specialty') || 'Web Developer';
+    const exists = state.testers.some(t => t.name.trim().toLowerCase() === devName.trim().toLowerCase());
+    if (!exists) {
+      const newDevTester = {
+        id: 'dev_' + Date.now(),
+        name: devName,
+        email: 'developer@company.com',
+        role: devSpecialty
+      };
+      state.testers.push(newDevTester);
+      saveState();
+      syncItemToCloud('testers', newDevTester);
+    }
   }
 }
 

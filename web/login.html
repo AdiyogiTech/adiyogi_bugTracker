@@ -100,8 +100,8 @@
         /* Role Selector */
         .role-selector {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
             margin-bottom: 24px;
         }
         .role-btn {
@@ -266,11 +266,15 @@
             <div class="role-selector">
                 <button class="role-btn active" id="roleHr" onclick="selectRole('hr')">
                     <span class="material-icons-round">admin_panel_settings</span>
-                    HR Manager
+                    Admin
                 </button>
                 <button class="role-btn" id="roleTester" onclick="selectRole('tester')">
                     <span class="material-icons-round">bug_report</span>
                     Tester
+                </button>
+                <button class="role-btn" id="roleDev" onclick="selectRole('developer')">
+                    <span class="material-icons-round">code</span>
+                    Developer
                 </button>
             </div>
 
@@ -282,12 +286,24 @@
 
             <!-- Login Form -->
             <form id="loginForm" onsubmit="handleLogin(event)">
-                <!-- Name field (shown for both, pre-filled for HR) -->
+                <!-- Name field -->
                 <div class="form-group" id="nameGroup">
                     <label for="nameInput" id="nameLabel">Full Name <span style="color:var(--red);">*</span></label>
                     <div class="input-wrap">
                         <span class="material-icons-round">person</span>
                         <input type="text" id="nameInput" placeholder="Enter your full name" required>
+                    </div>
+                </div>
+                <!-- Dev Type field - only for Developer -->
+                <div class="form-group" id="devTypeGroup" style="display:none;">
+                    <label for="devTypeInput">Developer Specialty <span style="color:var(--red);">*</span></label>
+                    <div class="input-wrap">
+                        <span class="material-icons-round" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 1.15rem; color: var(--text-secondary); pointer-events: none; z-index: 2;">code</span>
+                        <select id="devTypeInput" style="width: 100%; padding: 12px 42px 12px 42px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); font-family: var(--font); font-size: .9rem; outline: none; transition: border .2s, box-shadow .2s; appearance: none; -webkit-appearance: none; z-index: 1; position: relative;">
+                            <option value="Web Developer">Web Developer</option>
+                            <option value="App Developer">App Developer</option>
+                        </select>
+                        <span class="material-icons-round" style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 1.2rem; color: var(--text-secondary); pointer-events: none; z-index: 2;">expand_more</span>
                     </div>
                 </div>
                 <div class="form-group">
@@ -319,29 +335,39 @@
         let selectedRole = 'hr';
 
         const CREDENTIALS = {
-            hr:     { mobile: '9876543210', password: 'AYT@1234',    defaultName: 'Himanshu Choudhary', roleLabel: 'HR Manager' },
-            tester: { mobile: '1234567890', password: 'Tester@1234', defaultName: '',                   roleLabel: 'Tester' }
+            hr:        { mobile: '9876543210', password: 'AYT@1234',    defaultName: 'Himanshu Choudhary', roleLabel: 'Admin' },
+            tester:    { mobile: '1234567890', password: 'Tester@1234', defaultName: '',                   roleLabel: 'Tester' },
+            developer: { mobile: '1234567899', password: 'Developer@1234', defaultName: '',                roleLabel: 'Developer' }
         };
 
         function selectRole(role) {
             selectedRole = role;
             document.getElementById('roleHr').classList.toggle('active', role === 'hr');
             document.getElementById('roleTester').classList.toggle('active', role === 'tester');
+            document.getElementById('roleDev').classList.toggle('active', role === 'developer');
             document.getElementById('mobileInput').value = '';
             document.getElementById('passwordInput').value = '';
             document.getElementById('errorMsg').classList.add('hidden');
 
             const nameInput = document.getElementById('nameInput');
             const nameLabel = document.getElementById('nameLabel');
+            const devTypeGroup = document.getElementById('devTypeGroup');
 
             if (role === 'hr') {
                 nameInput.value = CREDENTIALS.hr.defaultName;
-                nameInput.placeholder = 'HR Manager name';
-                nameLabel.innerHTML = 'HR Manager Name <span style="color:var(--red);">*</span>';
+                nameInput.placeholder = 'Admin Name';
+                nameLabel.innerHTML = 'Admin Name <span style="color:var(--red);">*</span>';
+                devTypeGroup.style.display = 'none';
+            } else if (role === 'developer') {
+                nameInput.value = '';
+                nameInput.placeholder = 'Enter your full name';
+                nameLabel.innerHTML = 'Developer Name <span style="color:var(--red);">*</span>';
+                devTypeGroup.style.display = 'block';
             } else {
                 nameInput.value = '';
                 nameInput.placeholder = 'Enter your full name';
                 nameLabel.innerHTML = 'Your Full Name <span style="color:var(--red);">*</span>';
+                devTypeGroup.style.display = 'none';
             }
         }
 
@@ -375,7 +401,14 @@
             if (mobile === cred.mobile && password === cred.password) {
                 sessionStorage.setItem('ayt_role', selectedRole);
                 sessionStorage.setItem('ayt_username', nameEntered);
-                sessionStorage.setItem('ayt_user_role_label', cred.roleLabel);
+                
+                let roleLabel = cred.roleLabel;
+                if (selectedRole === 'developer') {
+                    const devType = document.getElementById('devTypeInput').value;
+                    roleLabel = devType; // E.g., "Web Developer" or "App Developer"
+                    sessionStorage.setItem('ayt_dev_specialty', devType);
+                }
+                sessionStorage.setItem('ayt_user_role_label', roleLabel);
                 window.location.href = 'index.html';
             } else {
                 errorMsg.classList.remove('hidden');
