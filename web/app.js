@@ -1,3 +1,17 @@
+// ===== Auth Guard =====
+// Read session before anything else
+const _sessionRole = sessionStorage.getItem('ayt_role');
+const _sessionName = sessionStorage.getItem('ayt_username');
+const _sessionRoleLabel = sessionStorage.getItem('ayt_user_role_label');
+
+if (!_sessionRole) {
+  // Not logged in — redirect to login page
+  window.location.replace('login.html');
+}
+
+const currentUserRole = _sessionRole || 'hr'; // 'hr' | 'tester'
+const isHR = currentUserRole === 'hr';
+
 // ===== State Management =====
 let state = {
   projects: [],
@@ -550,6 +564,7 @@ function openProjectModal(projectId = null) {
       document.getElementById('prioritySelect').value = project.priority;
       document.getElementById('projectDesc').value = project.desc || '';
       document.getElementById('statusSelect').value = project.status;
+      document.getElementById('projectTypeSelect').value = project.projectType || 'Both';
     }
   } else {
     modalTitle.textContent = 'Add New Project';
@@ -557,6 +572,7 @@ function openProjectModal(projectId = null) {
     document.getElementById('editProjectId').value = '';
     document.getElementById('prioritySelect').value = 'Medium';
     document.getElementById('statusSelect').value = 'Pending';
+    document.getElementById('projectTypeSelect').value = 'Both';
   }
 
   modal.classList.add('show');
@@ -577,6 +593,7 @@ document.getElementById('projectForm').addEventListener('submit', function(e) {
   const priority = document.getElementById('prioritySelect').value;
   const desc = document.getElementById('projectDesc').value.trim();
   const status = document.getElementById('statusSelect').value;
+  const projectType = document.getElementById('projectTypeSelect').value;
 
   if (!name || !testerId) {
     showToast('Please fill out all required fields.', 'error');
@@ -595,7 +612,8 @@ document.getElementById('projectForm').addEventListener('submit', function(e) {
         testerId,
         priority,
         desc,
-        status
+        status,
+        projectType
       };
       state.projects[projectIndex] = finalProject;
       
@@ -611,6 +629,7 @@ document.getElementById('projectForm').addEventListener('submit', function(e) {
       testerId,
       priority,
       status,
+      projectType,
       desc,
       created: new Date().toISOString().split('T')[0]
     };
@@ -1554,6 +1573,12 @@ function renderTimeline() {
 // Render Projects Page Table
 let activeFilter = 'all';
 
+function getVisibleProjects() {
+  // Tester sees only all projects (HR added), but cannot edit/delete
+  // HR sees all projects
+  return [...state.projects];
+}
+
 function renderProjectsTable() {
   const tbody = document.getElementById('projectsTableBody');
   const table = document.querySelector('.projects-table');
@@ -1562,7 +1587,7 @@ function renderProjectsTable() {
 
   const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
 
-  let filtered = [...state.projects];
+  let filtered = getVisibleProjects();
 
   if (activeFilter !== 'all') {
     filtered = filtered.filter(p => p.status === activeFilter);
@@ -1588,6 +1613,13 @@ function renderProjectsTable() {
   if (table) table.style.display = 'table';
   if (emptyState) emptyState.style.display = 'none';
 
+  // Type badge helper
+  const typeBadge = (t) => {
+    const map = { 'Web': '#3b82f6', 'App': '#f59e0b', 'Both': '#6366f1' };
+    const label = t || 'Both';
+    return `<span style="font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:10px;background:${map[label] || '#6366f1'}22;color:${map[label] || '#6366f1'};border:1px solid ${map[label] || '#6366f1'}44;">${label === 'Both' ? 'Web & App' : label}</span>`;
+  };
+
   tbody.innerHTML = filtered.map(p => {
     const tester = state.testers.find(t => t.id === p.testerId);
     const testerName = tester ? tester.name : 'Deleted Tester';
@@ -1603,17 +1635,28 @@ function renderProjectsTable() {
     const totalCount = projectBugs.length;
     const activeBugsCount = projectBugs.filter(b => b.status === 'Pending' || b.status === 'In Progress' || b.status === 'Re-open').length;
 
+    const actionsHtml = isHR ? `
+      <div class="table-actions">
+        <button class="edit-btn" onclick="openProjectModal('${p.id}')" title="Edit Project">
+          <span class="material-icons-round" style="font-size: 1.15rem;">edit</span>
+        </button>
+        <button class="delete-btn" onclick="confirmDeleteProject('${p.id}')" title="Delete Project">
+          <span class="material-icons-round" style="font-size: 1.15rem;">delete</span>
+        </button>
+      </div>` : `<span style="font-size:.75rem;color:var(--text-secondary);">—</span>`;
+
     return `
       <tr>
         <td>
-          <div style="font-weight: 600; cursor: pointer; color: var(--accent); display: inline-block;" onclick="viewProjectDetails('${p.id}')" class="project-name-link" title="Click to view Project & Bugs details">
+          <div style="font-weight: 600; cursor: pointer; color: var(--accent); display: inline-block;" onclick="viewProjectDetails('${p.id}')" title="Click to view bugs">
             ${p.name}
           </div>
-          <div style="font-size: 0.75rem; color: var(--text-secondary); max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${p.desc || ''}">
+          <div style="font-size: 0.75rem; color: var(--text-secondary); max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${p.desc || ''}">
             ${p.desc || 'No description provided.'}
           </div>
         </td>
         <td>${testerName}</td>
+        <td>${typeBadge(p.projectType)}</td>
         <td><span class="priority-badge ${priorityClass}">${p.priority}</span></td>
         <td><span class="status-badge ${statusClass}">${p.status}</span></td>
         <td>
@@ -1622,16 +1665,7 @@ function renderProjectsTable() {
             ${totalCount} (${activeBugsCount} Active)
           </div>
         </td>
-        <td>
-          <div class="table-actions">
-            <button class="edit-btn" onclick="openProjectModal('${p.id}')" title="Edit Project">
-              <span class="material-icons-round" style="font-size: 1.15rem;">edit</span>
-            </button>
-            <button class="delete-btn" onclick="confirmDeleteProject('${p.id}')" title="Delete Project">
-              <span class="material-icons-round" style="font-size: 1.15rem;">delete</span>
-            </button>
-          </div>
-        </td>
+        <td>${actionsHtml}</td>
       </tr>
     `;
   }).join('');
@@ -2004,10 +2038,59 @@ function initCanvasParticles() {
   }
 }
 
+// ===== Role-Based UI Control =====
+function applyRoleUI() {
+  const role = currentUserRole;
+  const roleBadge = document.getElementById('roleBadge');
+
+  // ── Patch state.profile with session data so renderProfile() picks up the
+  //    correct name & role for both HR and Tester logins ──────────────────────
+  if (_sessionName) {
+    state.profile.name = _sessionName;
+  }
+  if (_sessionRoleLabel) {
+    state.profile.role = _sessionRoleLabel;
+  }
+
+  // Update role badge text and color
+  if (roleBadge) {
+    if (role === 'hr') {
+      roleBadge.textContent = 'HR';
+      roleBadge.style.background = 'rgba(99,102,241,.15)';
+      roleBadge.style.color = 'var(--accent)';
+      roleBadge.style.border = '1px solid rgba(99,102,241,.25)';
+    } else {
+      roleBadge.textContent = 'Tester';
+      roleBadge.style.background = 'rgba(34,197,94,.12)';
+      roleBadge.style.color = 'var(--green)';
+      roleBadge.style.border = '1px solid rgba(34,197,94,.2)';
+    }
+  }
+
+  // Show/hide HR-only nav items
+  document.querySelectorAll('.hr-only').forEach(el => {
+    el.style.display = isHR ? '' : 'none';
+  });
+
+  // Show/hide HR-only buttons in dashboard and projects page
+  document.querySelectorAll('.hr-action').forEach(el => {
+    el.style.display = isHR ? '' : 'none';
+  });
+
+  // Tester: disable profile edit click (tester sees their own name but can't edit HR settings)
+  const topUserProfile = document.getElementById('topUserProfile');
+  const sidebarUserProfile = document.getElementById('sidebarUserProfile');
+  if (!isHR) {
+    if (topUserProfile) topUserProfile.style.cursor = 'default';
+    if (sidebarUserProfile) sidebarUserProfile.style.pointerEvents = 'none';
+  }
+}
+
 // ===== Page Initialization =====
 window.addEventListener('DOMContentLoaded', async () => {
   loadState();
   initTheme();
+  applyRoleUI();
   
   // Try fetching Vercel KV state
   const gotServerState = await fetchServerState();
@@ -2029,6 +2112,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   renderAll();
   initCanvasParticles();
+
+  // ===== Logout =====
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    sessionStorage.clear();
+    window.location.replace('login.html');
+  });
 
   // Expose functions to window for onclick attributes in html string rendering
   window.openProjectModal = openProjectModal;

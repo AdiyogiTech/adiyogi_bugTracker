@@ -1,6 +1,12 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/login"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

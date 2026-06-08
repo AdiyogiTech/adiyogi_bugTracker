@@ -40,11 +40,11 @@
                 <span class="material-icons-round">folder_open</span>
                 <span class="nav-label">All Projects</span>
             </a>
-            <a href="#" class="nav-item" data-page="testers">
+            <a href="#" class="nav-item hr-only" data-page="testers">
                 <span class="material-icons-round">group</span>
                 <span class="nav-label">Testers</span>
             </a>
-            <a href="#" class="nav-item" data-page="reports">
+            <a href="#" class="nav-item hr-only" data-page="reports">
                 <span class="material-icons-round">analytics</span>
                 <span class="nav-label">Reports</span>
             </a>
@@ -92,6 +92,10 @@
                     <div class="top-user-avatar" id="topUserAvatar">HC</div>
                     <span class="top-user-name" id="topUserName">Himanshu Choudhary</span>
                 </div>
+                <span id="roleBadge" style="font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(99,102,241,.15);color:var(--accent);border:1px solid rgba(99,102,241,.25);">HR</span>
+                <button class="icon-btn" id="logoutBtn" title="Logout" style="color:var(--red);">
+                    <span class="material-icons-round">logout</span>
+                </button>
             </div>
         </header>
 
@@ -105,7 +109,7 @@
                         <h2 class="page-title">Dashboard</h2>
                         <p class="page-subtitle">Welcome back! Here's your testing overview.</p>
                     </div>
-                    <button class="btn btn-primary" id="addProjectBtn">
+                    <button class="btn btn-primary hr-action" id="addProjectBtn">
                         <span class="material-icons-round">add</span>
                         Add Project
                     </button>
@@ -237,7 +241,7 @@
                             <button class="filter-btn" data-filter="In Progress">In Progress</button>
                             <button class="filter-btn" data-filter="Completed">Completed</button>
                         </div>
-                        <button class="btn btn-primary" id="addProjectBtn2">
+                        <button class="btn btn-primary hr-action" id="addProjectBtn2">
                             <span class="material-icons-round">add</span>
                             Add Project
                         </button>
@@ -249,10 +253,11 @@
                             <tr>
                                 <th>Project Name</th>
                                 <th>Assigned Tester</th>
+                                <th>Type</th>
                                 <th>Priority</th>
                                 <th>Status</th>
-                                <th>Created</th>
-                                <th>Actions</th>
+                                <th>Bugs</th>
+                                <th class="hr-action">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="projectsTableBody">
@@ -274,7 +279,7 @@
                         <h2 class="page-title">Testers</h2>
                         <p class="page-subtitle">Manage your testing team members.</p>
                     </div>
-                    <button class="btn btn-primary" id="addTesterBtn">
+                    <button class="btn btn-primary hr-action" id="addTesterBtn">
                         <span class="material-icons-round">person_add</span>
                         Add Tester
                     </button>
@@ -495,13 +500,23 @@
                     <label for="projectDesc">Description</label>
                     <textarea id="projectDesc" rows="3" placeholder="Brief description of the testing scope..."></textarea>
                 </div>
-                <div class="form-group">
-                    <label for="statusSelect">Status</label>
-                    <select id="statusSelect">
-                        <option value="Pending">Pending</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Completed">Completed</option>
-                    </select>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="statusSelect">Status</label>
+                        <select id="statusSelect">
+                            <option value="Pending">Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Completed">Completed</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="projectTypeSelect">Project Type</label>
+                        <select id="projectTypeSelect">
+                            <option value="Both" selected>Web &amp; App</option>
+                            <option value="Web">Web Only</option>
+                            <option value="App">App Only</option>
+                        </select>
+                    </div>
                 </div>
                 <input type="hidden" id="editProjectId" value="">
                 <div class="modal-footer">
