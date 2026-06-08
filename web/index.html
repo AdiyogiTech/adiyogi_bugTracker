@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Adiyogi Bug Tracker - HR Project Testing Management System. Track, assign, and manage QA testing across all your projects.">
+    <title>Adiyogi Bug Tracker | HR Testing Management</title>
+    <link rel="icon" type="image/png" href="logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Animated Background Particles -->
+    <div class="bg-particles" id="bgParticles"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-container">
+                <img src="logo.png" alt="Adiyogi Logo" class="logo-img">
+                <div class="logo-text">
+                    <h1>Adiyogi</h1>
+                    <span>Bug Tracker</span>
+                </div>
+            </div>
+            <button class="sidebar-close" id="sidebarClose">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-page="dashboard">
+                <span class="material-icons-round">dashboard</span>
+                <span class="nav-label">Dashboard</span>
+            </a>
+            <a href="#" class="nav-item" data-page="projects">
+                <span class="material-icons-round">folder_open</span>
+                <span class="nav-label">All Projects</span>
+            </a>
+            <a href="#" class="nav-item" data-page="testers">
+                <span class="material-icons-round">group</span>
+                <span class="nav-label">Testers</span>
+            </a>
+            <a href="#" class="nav-item" data-page="reports">
+                <span class="material-icons-round">analytics</span>
+                <span class="nav-label">Reports</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-profile" id="sidebarUserProfile" style="cursor: pointer;">
+                <div class="user-avatar" id="sidebarUserAvatar">
+                    <span class="material-icons-round">person</span>
+                </div>
+                <div class="user-info">
+                    <span class="user-name" id="sidebarUserName">HR Manager</span>
+                    <span class="user-role" id="sidebarUserRole">Administrator</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <button class="menu-toggle" id="menuToggle">
+                    <span class="material-icons-round">menu</span>
+                </button>
+                <div class="search-container">
+                    <span class="material-icons-round search-icon">search</span>
+                    <input type="text" class="search-input" id="searchInput" placeholder="Search projects, testers...">
+                </div>
+            </div>
+            <div class="top-bar-right">
+                <button class="icon-btn notification-btn" id="notifBtn">
+                    <span class="material-icons-round">notifications</span>
+                    <span class="notification-badge" id="notifBadge">3</span>
+                </button>
+                <button class="icon-btn" id="themeToggle">
+                    <span class="material-icons-round">dark_mode</span>
+                </button>
+                <div class="top-bar-divider"></div>
+                <div class="top-user" id="topUserProfile" style="cursor: pointer;">
+                    <div class="top-user-avatar" id="topUserAvatar">AB</div>
+                    <span class="top-user-name" id="topUserName">Ankit B.</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <div class="page-content" id="pageContent">
+
+            <!-- ===== DASHBOARD PAGE ===== -->
+            <section class="page active" id="dashboardPage">
+                <div class="page-header">
+                    <div>
+                        <h2 class="page-title">Dashboard</h2>
+                        <p class="page-subtitle">Welcome back! Here's your testing overview.</p>
+                    </div>
+                    <button class="btn btn-primary" id="addProjectBtn">
+                        <span class="material-icons-round">add</span>
+                        Add Project
+                    </button>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid" id="statsGrid">
+                    <div class="stat-card stat-total" id="statTotal">
+                        <div class="stat-icon-wrap">
+                            <span class="material-icons-round">folder_copy</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="totalCount">0</span>
+                            <span class="stat-label">Total Projects</span>
+                        </div>
+                        <div class="stat-trend up">
+                            <span class="material-icons-round">trending_up</span>
+                            <span>12%</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-pending" id="statPending">
+                        <div class="stat-icon-wrap">
+                            <span class="material-icons-round">pending_actions</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="pendingCount">0</span>
+                            <span class="stat-label">Pending Testing</span>
+                        </div>
+                        <div class="stat-trend">
+                            <span class="material-icons-round">schedule</span>
+                            <span>Waiting</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-progress" id="statProgress">
+                        <div class="stat-icon-wrap">
+                            <span class="material-icons-round">autorenew</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="progressCount">0</span>
+                            <span class="stat-label">In Progress</span>
+                        </div>
+                        <div class="stat-trend up">
+                            <span class="material-icons-round">speed</span>
+                            <span>Active</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-completed" id="statCompleted">
+                        <div class="stat-icon-wrap">
+                            <span class="material-icons-round">task_alt</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="completedCount">0</span>
+                            <span class="stat-label">Completed</span>
+                        </div>
+                        <div class="stat-trend up">
+                            <span class="material-icons-round">check_circle</span>
+                            <span>Done</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Overview -->
+                <div class="dashboard-grid">
+                    <div class="card progress-card">
+                        <div class="card-header">
+                            <h3>Testing Progress</h3>
+                            <span class="material-icons-round">pie_chart</span>
+                        </div>
+                        <div class="progress-ring-container" id="progressRing">
+                            <canvas id="progressCanvas" width="200" height="200"></canvas>
+                            <div class="progress-center">
+                                <span class="progress-percent" id="progressPercent">0%</span>
+                                <span class="progress-label">Completed</span>
+                            </div>
+                        </div>
+                        <div class="progress-legend">
+                            <div class="legend-item">
+                                <span class="legend-dot completed"></span>
+                                <span>Completed</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-dot in-progress"></span>
+                                <span>In Progress</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-dot pending"></span>
+                                <span>Pending</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card recent-projects-card">
+                        <div class="card-header">
+                            <h3>Recent Projects</h3>
+                            <button class="btn btn-ghost" id="viewAllProjectsBtn">
+                                View All
+                                <span class="material-icons-round">arrow_forward</span>
+                            </button>
+                        </div>
+                        <div class="recent-projects-list" id="recentProjectsList">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activity Timeline -->
+                <div class="card activity-card">
+                    <div class="card-header">
+                        <h3>Recent Activity</h3>
+                        <span class="badge">Live</span>
+                    </div>
+                    <div class="activity-timeline" id="activityTimeline">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== PROJECTS PAGE ===== -->
+            <section class="page" id="projectsPage">
+                <div class="page-header">
+                    <div>
+                        <h2 class="page-title">All Projects</h2>
+                        <p class="page-subtitle">Manage and track all your testing projects.</p>
+                    </div>
+                    <div class="page-header-actions">
+                        <div class="filter-group">
+                            <button class="filter-btn active" data-filter="all">All</button>
+                            <button class="filter-btn" data-filter="Pending">Pending</button>
+                            <button class="filter-btn" data-filter="In Progress">In Progress</button>
+                            <button class="filter-btn" data-filter="Completed">Completed</button>
+                        </div>
+                        <button class="btn btn-primary" id="addProjectBtn2">
+                            <span class="material-icons-round">add</span>
+                            Add Project
+                        </button>
+                    </div>
+                </div>
+                <div class="projects-table-container">
+                    <table class="projects-table" id="projectsTable">
+                        <thead>
+                            <tr>
+                                <th>Project Name</th>
+                                <th>Assigned Tester</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="projectsTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="emptyState" style="display:none;">
+                        <span class="material-icons-round">folder_off</span>
+                        <h3>No projects found</h3>
+                        <p>Start by adding your first testing project.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TESTERS PAGE ===== -->
+            <section class="page" id="testersPage">
+                <div class="page-header">
+                    <div>
+                        <h2 class="page-title">Testers</h2>
+                        <p class="page-subtitle">Manage your testing team members.</p>
+                    </div>
+                    <button class="btn btn-primary" id="addTesterBtn">
+                        <span class="material-icons-round">person_add</span>
+                        Add Tester
+                    </button>
+                </div>
+                <div class="testers-grid" id="testersGrid">
+                    <!-- Populated by JS -->
+                </div>
+            </section>
+
+            <!-- ===== REPORTS PAGE ===== -->
+            <section class="page" id="reportsPage">
+                <div class="page-header">
+                    <div>
+                        <h2 class="page-title">Reports & Analytics</h2>
+                        <p class="page-subtitle">Insights into your testing pipeline performance.</p>
+                    </div>
+                </div>
+                <div class="reports-grid">
+                    <div class="card report-card">
+                        <div class="card-header">
+                            <h3>Status Distribution</h3>
+                        </div>
+                        <canvas id="statusChart" width="400" height="250"></canvas>
+                    </div>
+                    <div class="card report-card">
+                        <div class="card-header">
+                            <h3>Tester Workload</h3>
+                        </div>
+                        <canvas id="workloadChart" width="400" height="250"></canvas>
+                    </div>
+                    <div class="card report-card full-width">
+                        <div class="card-header">
+                            <h3>Priority Breakdown</h3>
+                        </div>
+                        <canvas id="priorityChart" width="800" height="250"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== PROJECT DETAILS PAGE ===== -->
+            <section class="page" id="projectDetailsPage">
+                <div class="page-header" style="margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <button class="btn btn-ghost" id="backToPreviousBtn" style="padding: 8px; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                            <span class="material-icons-round">arrow_back</span>
+                        </button>
+                        <div>
+                            <h2 class="page-title" id="detailProjectName">Project Details</h2>
+                            <p class="page-subtitle" id="detailProjectDesc">Project description and bug tracking overview.</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="addBugBtn">
+                        <span class="material-icons-round">bug_report</span>
+                        Report Bug
+                    </button>
+                </div>
+
+                <!-- Project Stats & Info -->
+                <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+                    <div class="stat-card" style="pointer-events: none;">
+                        <div class="stat-icon-wrap" style="background: rgba(99,102,241,.12); color: var(--accent);">
+                            <span class="material-icons-round">person</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="detailProjectTester" style="font-size: 1.15rem; font-weight: 700;">John Doe</span>
+                            <span class="stat-label">Assigned Tester</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="pointer-events: none;">
+                        <div class="stat-icon-wrap" style="background: rgba(245,158,11,.12); color: var(--orange);">
+                            <span class="material-icons-round">priority_high</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="detailProjectPriority" style="font-size: 1.15rem; font-weight: 700;">High</span>
+                            <span class="stat-label">Priority Level</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="pointer-events: none;">
+                        <div class="stat-icon-wrap" style="background: rgba(59,130,246,.12); color: var(--blue);">
+                            <span class="material-icons-round">info</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="detailProjectStatus" style="font-size: 1.15rem; font-weight: 700;">In Progress</span>
+                            <span class="stat-label">Project Status</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="pointer-events: none;">
+                        <div class="stat-icon-wrap" style="background: rgba(34,197,94,.12); color: var(--green);">
+                            <span class="material-icons-round">bug_report</span>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="detailProjectBugsCount" style="font-size: 1.15rem; font-weight: 700;">0</span>
+                            <span class="stat-label">Total Bugs</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bugs Status Statistics Grid (with circular/bar percentages) -->
+                <div class="card" style="margin-bottom: 24px; padding: 20px;">
+                    <h3 style="margin-bottom: 16px; font-size: 1.05rem; font-weight: 700;">Bugs Status Breakdown</h3>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;" class="bugs-stats-container">
+                        <!-- Pending Bugs Card -->
+                        <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center;">
+                            <span style="font-size: 0.78rem; color: var(--text-secondary); display: block; font-weight: 600; margin-bottom: 8px;">PENDING BUGS</span>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px;">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; border: 4px solid var(--orange); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: var(--orange);" id="pendingBugsPercent">0%</div>
+                                <div style="text-align: left;">
+                                    <span style="font-size: 1.5rem; font-weight: 800; display: block; line-height: 1;" id="pendingBugsCount">0</span>
+                                    <span style="font-size: 0.7rem; color: var(--text-secondary);">active/new</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- In Progress Bugs Card -->
+                        <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center;">
+                            <span style="font-size: 0.78rem; color: var(--text-secondary); display: block; font-weight: 600; margin-bottom: 8px;">IN PROGRESS BUGS</span>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px;">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; border: 4px solid var(--blue); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: var(--blue);" id="progressBugsPercent">0%</div>
+                                <div style="text-align: left;">
+                                    <span style="font-size: 1.5rem; font-weight: 800; display: block; line-height: 1;" id="progressBugsCount">0</span>
+                                    <span style="font-size: 0.7rem; color: var(--text-secondary);">investigating</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Completed Bugs Card -->
+                        <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center;">
+                            <span style="font-size: 0.78rem; color: var(--text-secondary); display: block; font-weight: 600; margin-bottom: 8px;">COMPLETED BUGS</span>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px;">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; border: 4px solid var(--green); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: var(--green);" id="completedBugsPercent">0%</div>
+                                <div style="text-align: left;">
+                                    <span style="font-size: 1.5rem; font-weight: 800; display: block; line-height: 1;" id="completedBugsCount">0</span>
+                                    <span style="font-size: 0.7rem; color: var(--text-secondary);">fixed & verified</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Reopened Bugs Card -->
+                        <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center;">
+                            <span style="font-size: 0.78rem; color: var(--text-secondary); display: block; font-weight: 600; margin-bottom: 8px;">REOPENED BUGS</span>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px;">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; border: 4px solid var(--red); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: var(--red);" id="reopenBugsPercent">0%</div>
+                                <div style="text-align: left;">
+                                    <span style="font-size: 1.5rem; font-weight: 800; display: block; line-height: 1;" id="reopenBugsCount">0</span>
+                                    <span style="font-size: 0.7rem; color: var(--text-secondary);">failed verification</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bugs List Section -->
+                <div class="card">
+                    <div class="card-header" style="margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                        <h3>Bugs & Issues Report</h3>
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <div class="filter-group">
+                                <button class="filter-btn bug-filter-btn active" data-filter="all">All Status</button>
+                                <button class="filter-btn bug-filter-btn" data-filter="Pending">Pending</button>
+                                <button class="filter-btn bug-filter-btn" data-filter="In Progress">In Progress</button>
+                                <button class="filter-btn bug-filter-btn" data-filter="Done">Done</button>
+                                <button class="filter-btn bug-filter-btn" data-filter="Re-open">Re-open</button>
+                            </div>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <select id="bugTypeFilter" style="padding: 6px 12px; font-size: 0.8rem; width: 120px; border-radius: 8px; cursor: pointer;">
+                                    <option value="all">All Types</option>
+                                    <option value="App">App</option>
+                                    <option value="Web">Web</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bugs List -->
+                    <div style="display: flex; flex-direction: column; gap: 14px;" id="projectBugsList">
+                        <!-- Loaded dynamically -->
+                    </div>
+
+                    <div class="empty-state" id="bugEmptyState" style="display: none; padding: 40px 20px;">
+                        <span class="material-icons-round" style="font-size: 3rem;">bug_report</span>
+                        <h3>No bugs reported</h3>
+                        <p>All clean! There are no bugs reported for this project matching your filters.</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- ===== ADD PROJECT MODAL ===== -->
+    <div class="modal-overlay" id="projectModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add New Project</h3>
+                <button class="modal-close" id="modalClose">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <form class="modal-body" id="projectForm">
+                <div class="form-group">
+                    <label for="projectName">Project Name <span class="required">*</span></label>
+                    <input type="text" id="projectName" placeholder="Enter project name" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="testerSelect">Assign Tester <span class="required">*</span></label>
+                        <select id="testerSelect" required>
+                            <option value="">Select a tester</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="prioritySelect">Priority</label>
+                        <select id="prioritySelect">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="projectDesc">Description</label>
+                    <textarea id="projectDesc" rows="3" placeholder="Brief description of the testing scope..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="statusSelect">Status</label>
+                    <select id="statusSelect">
+                        <option value="Pending">Pending</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                </div>
+                <input type="hidden" id="editProjectId" value="">
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" id="modalCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="modalSubmit">
+                        <span class="material-icons-round">save</span>
+                        Save Project
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== ADD TESTER MODAL ===== -->
+    <div class="modal-overlay" id="testerModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Add New Tester</h3>
+                <button class="modal-close" id="testerModalClose">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <form class="modal-body" id="testerForm">
+                <div class="form-group">
+                    <label for="testerName">Tester Name <span class="required">*</span></label>
+                    <input type="text" id="testerName" placeholder="Enter tester name" required>
+                </div>
+                <div class="form-group">
+                    <label for="testerEmail">Email</label>
+                    <input type="email" id="testerEmail" placeholder="tester@company.com">
+                </div>
+                <div class="form-group">
+                    <label for="testerRole">Specialization</label>
+                    <select id="testerRole">
+                        <option value="QA Tester">QA Tester</option>
+                        <option value="Automation Tester">Automation Tester</option>
+                        <option value="Performance Tester">Performance Tester</option>
+                        <option value="Security Tester">Security Tester</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" id="testerModalCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="material-icons-round">person_add</span>
+                        Add Tester
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== EDIT PROFILE MODAL ===== -->
+    <div class="modal-overlay" id="profileModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Edit Profile</h3>
+                <button class="modal-close" id="profileModalClose">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <form class="modal-body" id="profileForm">
+                <div class="form-group" style="text-align: center;">
+                    <label>Profile Photo</label>
+                    <div class="profile-preview-container" style="margin: 10px auto; width: 80px; height: 80px; position: relative;">
+                        <div id="profilePreviewAvatar" class="top-user-avatar" style="width: 80px; height: 80px; font-size: 2rem; border-radius: 20px; background: linear-gradient(135deg, var(--accent), var(--pink)); margin: 0 auto; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #fff; font-weight: 700;">AB</div>
+                        <input type="file" id="profileAvatarFile" accept="image/*" style="display: none;">
+                        <button type="button" class="btn-sm btn-primary" id="changePhotoBtn" style="position: absolute; bottom: -5px; right: -5px; padding: 4px; border-radius: 50%; min-width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.3); cursor: pointer;">
+                            <span class="material-icons-round" style="font-size: 1rem;">photo_camera</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="profileNameInput">Full Name <span class="required">*</span></label>
+                    <input type="text" id="profileNameInput" placeholder="Enter name" required>
+                </div>
+                <div class="form-group">
+                    <label for="profileRoleInput">Role/Designation</label>
+                    <input type="text" id="profileRoleInput" placeholder="e.g. HR Manager">
+                </div>
+                
+                <div style="margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 16px;">
+                    <label style="font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 0.88rem;">
+                        <span class="material-icons-round" style="font-size: 1.15rem;">cloud</span>
+                        Supabase Database Sync (Optional)
+                    </label>
+                    <div class="form-group">
+                        <label for="dbUrlInput" style="font-size: 0.75rem;">Supabase URL</label>
+                        <input type="url" id="dbUrlInput" placeholder="https://your-project.supabase.co" style="font-size: 0.8rem; height: 36px; padding: 8px 12px; border-radius: 8px;">
+                    </div>
+                    <div class="form-group">
+                        <label for="dbKeyInput" style="font-size: 0.75rem;">Supabase Anon Key</label>
+                        <input type="password" id="dbKeyInput" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." style="font-size: 0.8rem; height: 36px; padding: 8px 12px; border-radius: 8px;">
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <button type="button" class="btn btn-ghost btn-sm" id="testDbConnectionBtn" style="border: 1px solid var(--border); width: 50%; font-size: 0.75rem; padding: 8px;">Test Connection</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="syncLocalToDbBtn" style="width: 50%; display: none; font-size: 0.75rem; padding: 8px;">Sync Local Data</button>
+                    </div>
+                    <div id="dbSchemaSection" style="margin-top: 12px; display: none;">
+                        <label style="font-size: 0.72rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Supabase SQL Schema Setup Script:</label>
+                        <textarea id="dbSqlCopyText" readonly style="font-family: monospace; font-size: 0.7rem; height: 80px; resize: none; margin-top: 4px; padding: 6px; width: 100%; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-secondary);"></textarea>
+                        <button type="button" class="btn btn-ghost btn-sm" id="copySqlBtn" style="padding: 4px 8px; margin-top: 4px; width: 100%; border: 1px solid var(--border); font-size: 0.75rem;">Copy SQL Setup Script</button>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" id="profileModalCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="material-icons-round">save</span>
+                        Save Profile
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== ADD/EDIT BUG MODAL ===== -->
+    <div class="modal-overlay" id="bugModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="bugModalTitle">Report New Bug</h3>
+                <button class="modal-close" id="bugModalClose">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <form class="modal-body" id="bugForm">
+                <input type="hidden" id="bugProjectId" value="">
+                <input type="hidden" id="editBugId" value="">
+                
+                <div class="form-group">
+                    <label for="bugTitle">Bug Title <span class="required">*</span></label>
+                    <input type="text" id="bugTitle" placeholder="Describe the issue briefly..." required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bugType">Platform/Type</label>
+                        <select id="bugType" style="cursor: pointer;">
+                            <option value="Web" selected>Web</option>
+                            <option value="App">App</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="bugSeverity">Severity</label>
+                        <select id="bugSeverity" style="cursor: pointer;">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bugStatus">Status</label>
+                        <select id="bugStatus" style="cursor: pointer;">
+                            <option value="Pending" selected>Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                            <option value="Re-open">Re-open</option>
+                            <option value="In Future">In Future</option>
+                            <option value="No Need">No Need</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="bugDeveloper">Assign Developer</label>
+                        <select id="bugDeveloper" style="cursor: pointer;">
+                            <option value="Unassigned">Unassigned</option>
+                            <option value="Ankit B.">Ankit B.</option>
+                            <option value="John Dev">John Dev</option>
+                            <option value="Sarah Dev">Sarah Dev</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="bugDesc">Steps to Reproduce / Description</label>
+                    <textarea id="bugDesc" rows="4" placeholder="1. Go to page...&#10;2. Click on...&#10;3. Observe crash..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Screenshot / Proof</label>
+                    <div style="display: flex; align-items: center; gap: 14px; margin-top: 6px;">
+                        <input type="file" id="bugScreenshotFile" accept="image/*" style="display: none;">
+                        <button type="button" class="btn btn-ghost" id="bugScreenshotBtn" style="border: 1px dashed var(--border); padding: 12px 20px; border-radius: 10px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;">
+                            <span class="material-icons-round" style="font-size: 1.8rem; color: var(--text-secondary);">cloud_upload</span>
+                            <span id="bugScreenshotStatus" style="font-size: 0.8rem; color: var(--text-secondary);">Click to upload image</span>
+                        </button>
+                    </div>
+                    <div id="bugScreenshotPreviewContainer" style="display: none; margin-top: 12px; position: relative; width: 100px; height: 100px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">
+                        <img id="bugScreenshotPreview" src="" alt="Preview" style="width: 100%; height: 100%; object-fit: cover;">
+                        <button type="button" id="removeBugScreenshotBtn" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; cursor: pointer;">
+                            <span class="material-icons-round" style="font-size: 0.95rem;">close</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" id="bugModalCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="material-icons-round">save</span>
+                        Save Bug
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== LIGHTBOX MODAL ===== -->
+    <div class="modal-overlay" id="lightboxModal" style="z-index: 350;">
+        <div style="position: relative; max-width: 90vw; max-height: 85vh;">
+            <button class="modal-close" id="lightboxClose" style="position: absolute; top: -40px; right: 0; color: #fff; font-size: 2rem; cursor: pointer; border: none; background: none;">
+                <span class="material-icons-round">close</span>
+            </button>
+            <img id="lightboxImage" src="" alt="Full size" style="max-width: 100%; max-height: 85vh; border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,0.8); object-fit: contain;">
+        </div>
+    </div>
+
+    <!-- ===== NOTIFICATION PANEL ===== -->
+    <div class="notification-panel" id="notifPanel">
+        <div class="notif-header">
+            <h3>Notifications</h3>
+            <button class="btn btn-ghost btn-sm" id="clearNotifs">Clear All</button>
+        </div>
+        <div class="notif-list" id="notifList">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Confirm Dialog -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal modal-sm confirm-modal">
+            <div class="confirm-icon">
+                <span class="material-icons-round">warning_amber</span>
+            </div>
+            <h3 id="confirmTitle">Are you sure?</h3>
+            <p id="confirmMessage">This action cannot be undone.</p>
+            <div class="confirm-actions">
+                <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+                <button class="btn btn-danger" id="confirmOk">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
