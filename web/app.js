@@ -2086,32 +2086,47 @@ function applyRoleUI() {
   }
 }
 
+// ===== Asynchronous Cloud Fetching =====
+async function tryFetchCloudState() {
+  try {
+    // Try fetching Vercel KV state
+    const gotServerState = await fetchServerState();
+    if (gotServerState) {
+      showToast('State loaded from Vercel KV cloud!', 'success');
+      renderAll();
+      return;
+    }
+  } catch (e) {
+    console.warn('Vercel KV fetch failed/bypassed', e);
+  }
+
+  // Fallback: Try connecting to Supabase database
+  try {
+    const connected = initSupabase();
+    if (connected) {
+      const success = await fetchCloudData();
+      if (success) {
+        showToast('Cloud Database Connected & Synced!', 'success');
+        renderAll();
+      }
+    }
+  } catch (e) {
+    console.warn('Supabase fetch failed/bypassed', e);
+  }
+}
+
 // ===== Page Initialization =====
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
   loadState();
   initTheme();
   applyRoleUI();
   
-  // Try fetching Vercel KV state
-  const gotServerState = await fetchServerState();
-  if (gotServerState) {
-    showToast('State loaded from Vercel KV cloud!', 'success');
-  } else {
-    // Try connecting to Supabase database
-    const connected = initSupabase();
-    if (connected) {
-      showToast('Connecting to cloud database...', 'info');
-      const success = await fetchCloudData();
-      if (success) {
-        showToast('Cloud Database Connected & Synced!', 'success');
-      } else {
-        showToast('Cloud connection failed. Using local storage.', 'warning');
-      }
-    }
-  }
-
+  // Render instantly from local cache so there is no blank screen or loader blocking the user
   renderAll();
   initCanvasParticles();
+
+  // Load cloud data asynchronously in the background
+  tryFetchCloudState();
 
   // ===== Logout =====
   document.getElementById('logoutBtn').addEventListener('click', () => {
