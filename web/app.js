@@ -93,8 +93,39 @@ let tempBugScreenshotBase64 = '';
 let activeBugFilter = 'all';
 
 // ===== Helper Functions =====
+async function saveServerState() {
+  try {
+    await fetch('/api/state', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(state)
+    });
+  } catch (err) {
+    // Fail silently
+  }
+}
+
+async function fetchServerState() {
+  try {
+    const response = await fetch('/api/state');
+    if (!response.ok) return false;
+    const serverState = await response.json();
+    if (serverState && serverState.status !== 'offline' && !serverState.empty) {
+      state = serverState;
+      localStorage.setItem('adiyogi_bug_tracker_state', JSON.stringify(state));
+      return true;
+    }
+  } catch (err) {
+    console.log('Vercel KV server API fallback');
+  }
+  return false;
+}
+
 function saveState() {
   localStorage.setItem('adiyogi_bug_tracker_state', JSON.stringify(state));
+  saveServerState();
 }
 
 function loadState() {
@@ -1978,15 +2009,21 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadState();
   initTheme();
   
-  // Try connecting to Supabase database
-  const connected = initSupabase();
-  if (connected) {
-    showToast('Connecting to cloud database...', 'info');
-    const success = await fetchCloudData();
-    if (success) {
-      showToast('Cloud Database Connected & Synced!', 'success');
-    } else {
-      showToast('Cloud connection failed. Using local storage.', 'warning');
+  // Try fetching Vercel KV state
+  const gotServerState = await fetchServerState();
+  if (gotServerState) {
+    showToast('State loaded from Vercel KV cloud!', 'success');
+  } else {
+    // Try connecting to Supabase database
+    const connected = initSupabase();
+    if (connected) {
+      showToast('Connecting to cloud database...', 'info');
+      const success = await fetchCloudData();
+      if (success) {
+        showToast('Cloud Database Connected & Synced!', 'success');
+      } else {
+        showToast('Cloud connection failed. Using local storage.', 'warning');
+      }
     }
   }
 
