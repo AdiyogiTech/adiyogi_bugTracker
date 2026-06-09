@@ -28,68 +28,101 @@ let state = {
   theme: 'dark'
 };
 
-// Supabase Global Client & Configuration
-let supabaseClient = null;
-let supabaseUrl = '';
-let supabaseKey = '';
+// ===== MongoDB API Layer =====
+// All DB operations go through /api/db (Vercel serverless → MongoDB Atlas).
+// No credentials needed on the frontend — they live in Vercel env vars.
+let dbOnline = false; // Set to true once a successful API call confirms MongoDB is connected
 
-const DB_SQL_SCHEMA = `-- Create profile table
-create table if not exists profile (
-  id text primary key,
-  name text not null,
-  role text,
-  avatar text
-);
+// ── Fetch all data from MongoDB ──────────────────────────────────────────────
+async function fetchCloudData() {
+  try {
+    const res = await fetch('/api/db', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json();
 
--- Create testers table
-create table if not exists testers (
-  id text primary key,
-  name text not null,
-  email text,
-  role text
-);
+    if (data.offline) {
+      console.warn('MongoDB not configured on server:', data.message);
+      return false;
+    }
 
--- Create projects table
-create table if not exists projects (
-  id text primary key,
-  name text not null,
-  "testerId" text references testers(id) on delete set null,
-  priority text,
-  status text,
-  "desc" text,
-  created text
-);
+    // Merge fetched data into state
+    if (Array.isArray(data.projects))      state.projects      = data.projects;
+    if (Array.isArray(data.testers))       state.testers       = data.testers;
+    if (Array.isArray(data.bugs)) {
+      state.bugs = data.bugs.map(b => ({
+        ...b,
+        comments: Array.isArray(b.comments) ? b.comments : (typeof b.comments === 'string' ? JSON.parse(b.comments) : [])
+      }));
+    }
+    if (Array.isArray(data.notifications)) {
+      state.notifications = data.notifications.sort((a, b) => b.id.localeCompare(a.id));
+    }
+    if (data.profile && isHR) {
+      state.profile = { name: data.profile.name || '', role: data.profile.role || 'Admin', avatar: data.profile.avatar || '' };
+    }
 
--- Create bugs table
-create table if not exists bugs (
-  id text primary key,
-  "projectId" text references projects(id) on delete cascade,
-  title text not null,
-  type text,
-  severity text,
-  status text,
-  developer text,
-  "desc" text,
-  screenshot text,
-  comments jsonb default '[]'::jsonb,
-  created text
-);
+    dbOnline = true;
+    saveStateLocal(); // Cache locally
+    return true;
+  } catch (err) {
+    console.error('fetchCloudData error:', err);
+    return false;
+  }
+}
 
--- Create notifications table
-create table if not exists notifications (
-  id text primary key,
-  type text,
-  text text,
-  time text,
-  read boolean default false
-);
+// ── Upsert a single record ───────────────────────────────────────────────────
+async function syncItemToCloud(table, item) {
+  if (!dbOnline) return;
+  try {
+    await fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upsert', table, data: item })
+    });
+  } catch (err) {
+    console.error(`syncItemToCloud [${table}] error:`, err);
+  }
+}
 
--- Disable Row Level Security (RLS) for simple integration
-alter table profile disable row level security;
-alter table testers disable row level security;
-alter table projects disable row level security;
-alter table bugs disable row level security;
-alter table notifications disable row level security;`;
+// ── Delete a single record ───────────────────────────────────────────────────
+async function deleteItemFromCloud(table, id) {
+  if (!dbOnline) return;
+  try {
+    await fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', table, id })
+    });
+  } catch (err) {
+    console.error(`deleteItemFromCloud [${table}] error:`, err);
+  }
+}
+
+// ── Bulk sync: push all local state to MongoDB ───────────────────────────────
+async function syncAllLocalDataToCloud() {
+  showToast('Syncing all data to MongoDB...', 'info');
+  try {
+    const allItems = [
+      { table: 'profile', data: [{ id: 'hr_manager', ...state.profile }] },
+      { table: 'testers',       data: state.testers },
+      { table: 'projects',      data: state.projects },
+      { table: 'bugs',          data: state.bugs },
+      { table: 'notifications', data: state.notifications }
+    ];
+    for (const { table, data } of allItems) {
+      for (const item of data) {
+        await syncItemToCloud(table, item);
+      }
+    }
+    showToast('All data synced to MongoDB!', 'success');
+  } catch (err) {
+    showToast('Bulk sync failed: ' + err.message, 'error');
+  }
+}
+
+
+
+// (Supabase SQL schema removed — using MongoDB now)
 
 // Global Chart References
 let statusChartInstance = null;
@@ -108,96 +141,47 @@ let tempBugScreenshotBase64 = '';
 // Active Bug filters
 let activeBugFilter = 'all';
 
-// ===== Helper Functions =====
-async function saveServerState() {
-  try {
-    await fetch('/api/state', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(state)
-    });
-  } catch (err) {
-    // Fail silently
-  }
-}
+// ===== State Persistence =====
 
-async function fetchServerState() {
-  try {
-    const response = await fetch('/api/state');
-    if (!response.ok) return false;
-    const serverState = await response.json();
-    if (serverState && serverState.status !== 'offline' && !serverState.empty) {
-      state = serverState;
-      localStorage.setItem('adiyogi_bug_tracker_state', JSON.stringify(state));
-      return true;
-    }
-  } catch (err) {
-    console.log('Vercel KV server API fallback');
-  }
-  return false;
-}
-
-function saveState() {
+// Save only to localStorage (fast, synchronous)
+function saveStateLocal() {
   localStorage.setItem('adiyogi_bug_tracker_state', JSON.stringify(state));
-  saveServerState();
+}
+
+// saveState = localStorage (MongoDB writes happen per-item via syncItemToCloud)
+function saveState() {
+  saveStateLocal();
 }
 
 function loadState() {
-  // Load local state cache
   const saved = localStorage.getItem('adiyogi_bug_tracker_state');
   if (saved) {
     try {
       state = JSON.parse(saved);
-      if (!state.bugs) state.bugs = [];
-      if (!state.testers) state.testers = [];
-      if (!state.projects) state.projects = [];
+      if (!state.bugs)          state.bugs = [];
+      if (!state.testers)       state.testers = [];
+      if (!state.projects)      state.projects = [];
       if (!state.notifications) state.notifications = [];
-      if (!state.profile) state.profile = { name: '', role: 'Admin', avatar: '' };
+      if (!state.profile)       state.profile = { name: '', role: 'Admin', avatar: '' };
     } catch (e) {
-      console.error('Failed to parse saved state, using defaults', e);
+      console.error('Failed to parse saved state:', e);
       initializeDefaults();
     }
   } else {
     initializeDefaults();
   }
-
-  // Load Database Credentials
-  supabaseUrl = localStorage.getItem('adiyogi_supabase_url') || '';
-  supabaseKey = localStorage.getItem('adiyogi_supabase_key') || '';
 }
 
 function initializeDefaults() {
   state.theme = 'dark';
-  state.profile = {
-    name: '',  // No hardcoded name — comes from session login
-    role: 'Admin',
-    avatar: ''
-  };
+  state.profile = { name: '', role: 'Admin', avatar: '' };
   state.testers = [];
   state.projects = [];
   state.notifications = [
-    { id: 'n1', type: 'info', text: 'Welcome to Adiyogi Bug Tracker! Connect Supabase to sync data globally.', time: 'Just now', read: false }
+    { id: 'n1', type: 'info', text: 'Welcome to Adiyogi Bug Tracker! Data syncs globally via MongoDB.', time: 'Just now', read: false }
   ];
   state.bugs = [];
-  saveState();
-}
-
-// ===== Supabase Sync Engine =====
-
-function initSupabase() {
-  if (typeof supabase !== 'undefined' && supabaseUrl && supabaseKey) {
-    try {
-      supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
-      console.log('Supabase client successfully initialized.');
-      return true;
-    } catch (e) {
-      console.error('Failed to initialize Supabase client:', e);
-    }
-  }
-  supabaseClient = null;
-  return false;
+  saveStateLocal();
 }
 
 async function fetchCloudData() {
@@ -836,80 +820,12 @@ document.getElementById('profileAvatarFile').addEventListener('change', function
   reader.readAsDataURL(file);
 });
 
-// Test Supabase Connection
-document.getElementById('testDbConnectionBtn').addEventListener('click', async () => {
-  const url = document.getElementById('dbUrlInput').value.trim();
-  const key = document.getElementById('dbKeyInput').value.trim();
-  
-  if (!url || !key) {
-    showToast('Please enter both Supabase URL and Anon Key.', 'error');
-    return;
-  }
-
-  showToast('Connecting and testing...', 'info');
-
-  try {
-    const testClient = supabase.createClient(url, key);
-    // Ping profile table to test read permissions
-    const { data, error } = await testClient.from('profile').select('count', { count: 'exact', head: true });
-    
-    if (error && error.code === 'P0001') {
-       // RLS or other errors
-       showToast('Connected, but error querying profile. Schema might not be installed yet.', 'warning');
-       document.getElementById('syncLocalToDbBtn').style.display = 'block';
-    } else if (error) {
-       // Table doesn't exist error (still validates connection URL and key!)
-       if (error.message && error.message.includes('relation "profile" does not exist')) {
-         showToast('Connected! Tables do not exist. Please copy and run SQL setup script.', 'success');
-         document.getElementById('syncLocalToDbBtn').style.display = 'block';
-       } else {
-         throw error;
-       }
-    } else {
-      showToast('Connection Success! Cloud Database works perfectly.', 'success');
-      document.getElementById('syncLocalToDbBtn').style.display = 'block';
-    }
-  } catch (err) {
-    console.error(err);
-    showToast('Connection Failed: Check credentials or network.', 'error');
-  }
-});
-
-// Copy SQL Schema
-document.getElementById('copySqlBtn').addEventListener('click', () => {
-  const text = document.getElementById('dbSqlCopyText');
-  text.select();
-  document.execCommand('copy');
-  showToast('SQL script copied to clipboard!');
-});
-
-// Sync data button
-document.getElementById('syncLocalToDbBtn').addEventListener('click', async () => {
-  const url = document.getElementById('dbUrlInput').value.trim();
-  const key = document.getElementById('dbKeyInput').value.trim();
-
-  if (url && key) {
-    localStorage.setItem('adiyogi_supabase_url', url);
-    localStorage.setItem('adiyogi_supabase_key', key);
-    supabaseUrl = url;
-    supabaseKey = key;
-    initSupabase();
-    await syncAllLocalDataToCloud();
-  } else {
-    showToast('Credentials are required to sync.', 'error');
-  }
-});
-
 // Submit Profile Form
 document.getElementById('profileForm').addEventListener('submit', async function(e) {
   e.preventDefault();
 
   const name = document.getElementById('profileNameInput').value.trim();
   const role = document.getElementById('profileRoleInput').value.trim();
-  
-  // Database Inputs
-  const url = document.getElementById('dbUrlInput').value.trim();
-  const key = document.getElementById('dbKeyInput').value.trim();
 
   if (!name) {
     showToast('Name is required', 'error');
@@ -917,43 +833,15 @@ document.getElementById('profileForm').addEventListener('submit', async function
   }
 
   state.profile.name = name;
-  state.profile.role = role || 'Administrator';
+  state.profile.role = role || 'Admin';
   state.profile.avatar = tempAvatarBase64;
-
-  // Save Supabase credentials to localStorage
-  const oldUrl = localStorage.getItem('adiyogi_supabase_url') || '';
-  const oldKey = localStorage.getItem('adiyogi_supabase_key') || '';
-
-  if (url !== oldUrl || key !== oldKey) {
-    localStorage.setItem('adiyogi_supabase_url', url);
-    localStorage.setItem('adiyogi_supabase_key', key);
-    supabaseUrl = url;
-    supabaseKey = key;
-    
-    if (url && key) {
-      const isInit = initSupabase();
-      if (isInit) {
-        showToast('Connecting to database and fetching records...', 'info');
-        const success = await fetchCloudData();
-        if (success) {
-          showToast('Synced data from cloud database!', 'success');
-        } else {
-          showToast('Failed to pull. Ensure you run the SQL Setup Script in Supabase.', 'warning');
-        }
-      }
-    } else {
-      supabaseClient = null;
-      showToast('Disconnected from cloud database.', 'info');
-    }
-  }
 
   saveState();
   renderProfile();
-  
-  // Sync Profile changes to cloud
-  if (supabaseClient) {
-    await syncItemToCloud('profile', { id: 'hr_manager', ...state.profile });
-  }
+
+  // Sync profile to MongoDB
+  await syncItemToCloud('profile', { id: 'hr_manager', ...state.profile });
+  dbOnline = true; // Mark as online after a successful write
 
   addNotification('User profile settings updated.', 'success');
   showToast('Profile updated successfully!');
@@ -2165,45 +2053,21 @@ function applyRoleUI() {
   }
 }
 
-// ===== Asynchronous Cloud Fetching =====
-// Supabase is the PRIMARY global database — all roles read/write from the same Supabase project.
-// This ensures: when Admin creates a project or tester in Supabase, testers/devs see it immediately.
+// ===== Cloud Sync via MongoDB API (/api/db) =====
 async function tryFetchCloudState() {
-  // PRIORITY 1: Supabase (global shared DB — required for multi-user role visibility)
   try {
-    const connected = initSupabase();
-    if (connected) {
-      showToast('Connecting to cloud database...', 'info');
-      const success = await fetchCloudData();
-      if (success) {
-        // After cloud fetch, apply role-specific overrides to profile display
-        applyRoleUI();
-        renderAll();
-        showToast('✓ Cloud database synced — data is live!', 'success');
-        return;
-      } else {
-        showToast('Cloud DB connected but data pull failed. Check SQL schema.', 'warning');
-      }
-    }
-  } catch (e) {
-    console.warn('Supabase fetch failed:', e);
-  }
-
-  // PRIORITY 2: Vercel KV fallback (single-user only, no role separation)
-  try {
-    const gotServerState = await fetchServerState();
-    if (gotServerState) {
+    const success = await fetchCloudData();
+    if (success) {
       applyRoleUI();
       renderAll();
-      showToast('State loaded from server cache.', 'info');
-      return;
+      showToast('✓ Synced with MongoDB — data is live!', 'success');
+    } else {
+      showToast('MongoDB not reachable. Running from local cache.', 'warning');
     }
   } catch (e) {
-    console.warn('Vercel KV fetch failed:', e);
+    console.warn('MongoDB fetch failed:', e);
+    showToast('Running in offline mode.', 'warning');
   }
-
-  // PRIORITY 3: LocalStorage only (offline/no-db mode)
-  showToast('Running in local mode. Connect Supabase for multi-user sync.', 'warning');
 }
 
 // ===== Page Initialization =====
@@ -2212,12 +2076,21 @@ window.addEventListener('DOMContentLoaded', () => {
   initTheme();
   applyRoleUI();
   
-  // Render instantly from local cache so there is no blank screen or loader blocking the user
+  // Render instantly from local cache so there is no blank screen
   renderAll();
   initCanvasParticles();
 
   // Load cloud data asynchronously in the background
   tryFetchCloudState();
+
+  // ===== Auto-sync: poll MongoDB every 60s so all users see live updates =====
+  // Admin creates project on PC-A → Tester on PC-B sees it within 60 seconds.
+  setInterval(async () => {
+    if (dbOnline) {
+      const success = await fetchCloudData();
+      if (success) { applyRoleUI(); renderAll(); }
+    }
+  }, 60000); // 60 seconds
 
   // ===== Logout =====
   document.getElementById('logoutBtn').addEventListener('click', () => {
@@ -2236,4 +2109,12 @@ window.addEventListener('DOMContentLoaded', () => {
   window.openBugModal = openBugModal;
   window.deleteBug = deleteBug;
   window.openLightbox = openLightbox;
+
+  // Expose manual refresh to window (for future use or manual trigger)
+  window.manualRefreshFromCloud = async () => {
+    showToast('Refreshing from database...', 'info');
+    const success = await fetchCloudData();
+    if (success) { applyRoleUI(); renderAll(); showToast('Data refreshed!', 'success'); }
+    else { showToast('Could not reach MongoDB. Check server config.', 'error'); }
+  };
 });

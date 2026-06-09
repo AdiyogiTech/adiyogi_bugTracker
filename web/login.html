@@ -328,6 +328,50 @@
                     Sign In
                 </button>
             </form>
+
+            <!-- Database Config (one-time per device) -->
+            <div style="margin-top: 18px;">
+                <button type="button" onclick="toggleDbConfig()" style="width:100%;background:none;border:1px dashed rgba(99,102,241,.3);border-radius:12px;padding:10px 16px;color:var(--text-secondary);font-family:var(--font);font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s;" id="dbConfigToggleBtn">
+                    <span class="material-icons-round" style="font-size:1.1rem;">cloud_sync</span>
+                    <span id="dbConfigToggleLabel">Connect to Shared Database</span>
+                    <span class="material-icons-round" style="font-size:1rem;margin-left:auto;" id="dbConfigArrow">expand_more</span>
+                </button>
+                <div id="dbConfigPanel" style="display:none;margin-top:12px;padding:16px;background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.15);border-radius:14px;">
+                    <p style="font-size:.78rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
+                        <span class="material-icons-round" style="font-size:.9rem;vertical-align:middle;color:var(--accent);">info</span>
+                        Enter Supabase credentials <strong style="color:var(--text-primary);">once per device</strong>. All roles (Admin, Tester, Developer) will share the same live database.
+                    </p>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-secondary);margin-bottom:5px;">Supabase Project URL</label>
+                        <div style="position:relative;">
+                            <span class="material-icons-round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem;color:var(--text-secondary);pointer-events:none;">link</span>
+                            <input type="url" id="loginDbUrl" placeholder="https://xxxx.supabase.co" style="width:100%;padding:10px 12px 10px 38px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:var(--font);font-size:.82rem;outline:none;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-secondary);margin-bottom:5px;">Supabase Anon Key</label>
+                        <div style="position:relative;">
+                            <span class="material-icons-round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem;color:var(--text-secondary);pointer-events:none;">vpn_key</span>
+                            <input type="password" id="loginDbKey" placeholder="eyJhbGciOiJIUzI1NiIs..." style="width:100%;padding:10px 12px 10px 38px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:var(--font);font-size:.82rem;outline:none;">
+                        </div>
+                    </div>
+                    <div id="dbStatusMsg" style="display:none;font-size:.78rem;padding:8px 12px;border-radius:8px;margin-bottom:10px;"></div>
+                    <div style="display:flex;gap:8px;">
+                        <button type="button" onclick="testDbConnection()" style="flex:1;padding:9px;background:none;border:1px solid var(--border);border-radius:10px;color:var(--text-secondary);font-family:var(--font);font-size:.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .2s;">
+                            <span class="material-icons-round" style="font-size:.95rem;">wifi_tethering</span>Test
+                        </button>
+                        <button type="button" onclick="saveDbConfig()" style="flex:1;padding:9px;background:linear-gradient(135deg,var(--accent),var(--pink));border:none;border-radius:10px;color:#fff;font-family:var(--font);font-size:.8rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                            <span class="material-icons-round" style="font-size:.95rem;">save</span>Save & Use
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DB Status indicator -->
+            <div id="dbConnectedBadge" style="display:none;margin-top:10px;text-align:center;font-size:.75rem;color:#22c55e;display:flex;align-items:center;justify-content:center;gap:5px;">
+                <span class="material-icons-round" style="font-size:.9rem;">cloud_done</span>
+                <span>Database connected — live sync active</span>
+            </div>
         </div>
     </div>
 
@@ -335,11 +379,88 @@
         let selectedRole = 'hr';
 
         const CREDENTIALS = {
-            hr:        { mobile: '9876543210', password: 'AYT@1234',    roleLabel: 'Admin' },
-            tester:    { mobile: '1234567890', password: 'Tester@1234', roleLabel: 'Tester' },
+            hr:        { mobile: '9876543210', password: 'AYT@1234',       roleLabel: 'Admin' },
+            tester:    { mobile: '1234567890', password: 'Tester@1234',    roleLabel: 'Tester' },
             developer: { mobile: '1234567899', password: 'Developer@1234', roleLabel: 'Developer' }
         };
 
+        // ── DB Config helpers ──────────────────────────────────────────────
+        function toggleDbConfig() {
+            const panel = document.getElementById('dbConfigPanel');
+            const arrow = document.getElementById('dbConfigArrow');
+            const label = document.getElementById('dbConfigToggleLabel');
+            const open  = panel.style.display === 'none';
+            panel.style.display = open ? 'block' : 'none';
+            arrow.textContent   = open ? 'expand_less' : 'expand_more';
+            label.textContent   = open ? 'Hide Database Config' : 'Connect to Shared Database';
+        }
+
+        function showDbStatus(msg, type) {
+            const el = document.getElementById('dbStatusMsg');
+            el.style.display = 'block';
+            const colors = {
+                success: { bg: 'rgba(34,197,94,.1)',  border: 'rgba(34,197,94,.25)',  color: '#22c55e' },
+                error:   { bg: 'rgba(239,68,68,.1)',  border: 'rgba(239,68,68,.25)', color: '#ef4444' },
+                info:    { bg: 'rgba(99,102,241,.1)', border: 'rgba(99,102,241,.25)', color: '#6366f1' }
+            };
+            const c = colors[type] || colors.info;
+            el.style.background = c.bg;
+            el.style.border = '1px solid ' + c.border;
+            el.style.color = c.color;
+            el.style.borderRadius = '8px';
+            el.textContent = msg;
+        }
+
+        async function testDbConnection() {
+            const url = document.getElementById('loginDbUrl').value.trim();
+            const key = document.getElementById('loginDbKey').value.trim();
+            if (!url || !key) { showDbStatus('⚠ Please enter both URL and Anon Key.', 'error'); return; }
+            showDbStatus('Testing connection...', 'info');
+            try {
+                const client = supabase.createClient(url, key);
+                const { error } = await client.from('projects').select('count', { count: 'exact', head: true });
+                if (error && error.message && error.message.includes('does not exist')) {
+                    showDbStatus('✓ Connected! Tables not created yet — run SQL schema in Supabase.', 'success');
+                } else if (error) {
+                    showDbStatus('✓ Connected to Supabase! (Note: ' + error.message + ')', 'success');
+                } else {
+                    showDbStatus('✓ Connected! Database is ready and has data.', 'success');
+                }
+            } catch(e) {
+                showDbStatus('✗ Connection failed: ' + e.message, 'error');
+            }
+        }
+
+        function saveDbConfig() {
+            const url = document.getElementById('loginDbUrl').value.trim();
+            const key = document.getElementById('loginDbKey').value.trim();
+            if (!url || !key) { showDbStatus('⚠ Both fields are required.', 'error'); return; }
+            localStorage.setItem('adiyogi_supabase_url', url);
+            localStorage.setItem('adiyogi_supabase_key', key);
+            showDbStatus('✓ Saved! This device will now sync with the shared database.', 'success');
+            setTimeout(() => {
+                document.getElementById('dbConfigPanel').style.display = 'none';
+                document.getElementById('dbConfigArrow').textContent = 'expand_more';
+                document.getElementById('dbConfigToggleLabel').textContent = 'Connect to Shared Database';
+                updateDbBadge();
+            }, 1200);
+        }
+
+        function updateDbBadge() {
+            const url = localStorage.getItem('adiyogi_supabase_url');
+            const key = localStorage.getItem('adiyogi_supabase_key');
+            const badge = document.getElementById('dbConnectedBadge');
+            if (url && key) {
+                badge.style.display = 'flex';
+                // Pre-fill the inputs in case user wants to edit
+                document.getElementById('loginDbUrl').value = url;
+                document.getElementById('loginDbKey').value = key;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // ── Role selection ─────────────────────────────────────────────────
         function selectRole(role) {
             selectedRole = role;
             document.getElementById('roleHr').classList.toggle('active', role === 'hr');
@@ -349,8 +470,8 @@
             document.getElementById('passwordInput').value = '';
             document.getElementById('errorMsg').classList.add('hidden');
 
-            const nameInput = document.getElementById('nameInput');
-            const nameLabel = document.getElementById('nameLabel');
+            const nameInput  = document.getElementById('nameInput');
+            const nameLabel  = document.getElementById('nameLabel');
             const devTypeGroup = document.getElementById('devTypeGroup');
 
             if (role === 'hr') {
@@ -373,7 +494,7 @@
 
         function togglePassword() {
             const input = document.getElementById('passwordInput');
-            const icon = document.getElementById('eyeIcon');
+            const icon  = document.getElementById('eyeIcon');
             if (input.type === 'password') {
                 input.type = 'text';
                 icon.textContent = 'visibility_off';
@@ -385,12 +506,12 @@
 
         function handleLogin(e) {
             e.preventDefault();
-            const mobile = document.getElementById('mobileInput').value.trim();
-            const password = document.getElementById('passwordInput').value;
+            const mobile      = document.getElementById('mobileInput').value.trim();
+            const password    = document.getElementById('passwordInput').value;
             const nameEntered = document.getElementById('nameInput').value.trim();
-            const cred = CREDENTIALS[selectedRole];
-            const errorMsg = document.getElementById('errorMsg');
-            const errorText = document.getElementById('errorText');
+            const cred        = CREDENTIALS[selectedRole];
+            const errorMsg    = document.getElementById('errorMsg');
+            const errorText   = document.getElementById('errorText');
 
             if (!nameEntered) {
                 errorMsg.classList.remove('hidden');
@@ -401,35 +522,34 @@
             if (mobile === cred.mobile && password === cred.password) {
                 sessionStorage.setItem('ayt_role', selectedRole);
                 sessionStorage.setItem('ayt_username', nameEntered);
-                
+
                 let roleLabel = cred.roleLabel;
                 if (selectedRole === 'developer') {
                     const devType = document.getElementById('devTypeInput').value;
-                    roleLabel = devType; // E.g., "Web Developer" or "App Developer"
+                    roleLabel = devType;
                     sessionStorage.setItem('ayt_dev_specialty', devType);
                 }
                 sessionStorage.setItem('ayt_user_role_label', roleLabel);
                 window.location.href = 'index.html';
             } else {
                 errorMsg.classList.remove('hidden');
-                if (mobile !== cred.mobile) {
-                    errorText.textContent = 'Mobile number is incorrect.';
-                } else {
-                    errorText.textContent = 'Password is incorrect.';
-                }
+                errorText.textContent = mobile !== cred.mobile
+                    ? 'Mobile number is incorrect.'
+                    : 'Password is incorrect.';
                 document.getElementById('passwordInput').value = '';
             }
         }
 
-        // Auth guard: redirect if already logged in
+        // Auth guard
         if (sessionStorage.getItem('ayt_role')) {
             window.location.href = 'index.html';
         }
 
-        // Pre-fill default state on page load
+        // Init
         selectRole('hr');
+        updateDbBadge();
 
-        // Particles animation
+        // Particles
         function initParticles() {
             const container = document.getElementById('bgParticles');
             for (let i = 0; i < 12; i++) {
@@ -444,3 +564,4 @@
     </script>
 </body>
 </html>
+

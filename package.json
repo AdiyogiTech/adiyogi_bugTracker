@@ -1,0 +1,13 @@
+{
+  "name": "ayt-bug-tracker",
+  "version": "1.0.0",
+  "description": "Adiyogi Bug Tracker - HR Testing Management System",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mongodb": "^6.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
