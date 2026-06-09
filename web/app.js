@@ -70,23 +70,22 @@ async function fetchCloudData() {
   }
 }
 
-// ── Upsert a single record ───────────────────────────────────────────────────
+// ── Upsert a single record — ALWAYS attempts write, no dbOnline gate ────────
 async function syncItemToCloud(table, item) {
-  if (!dbOnline) return;
   try {
-    await fetch('/api/db', {
+    const res = await fetch('/api/db', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'upsert', table, data: item })
     });
+    if (res.ok) dbOnline = true; // Mark online after first successful write
   } catch (err) {
-    console.error(`syncItemToCloud [${table}] error:`, err);
+    console.warn(`syncItemToCloud [${table}] error:`, err);
   }
 }
 
-// ── Delete a single record ───────────────────────────────────────────────────
+// ── Delete a single record — ALWAYS attempts, no dbOnline gate ───────────────
 async function deleteItemFromCloud(table, id) {
-  if (!dbOnline) return;
   try {
     await fetch('/api/db', {
       method: 'POST',
@@ -94,7 +93,7 @@ async function deleteItemFromCloud(table, id) {
       body: JSON.stringify({ action: 'delete', table, id })
     });
   } catch (err) {
-    console.error(`deleteItemFromCloud [${table}] error:`, err);
+    console.warn(`deleteItemFromCloud [${table}] error:`, err);
   }
 }
 
@@ -1501,27 +1500,43 @@ let activeFilter = 'all';
 
 function getVisibleProjects() {
   if (currentUserRole === 'developer') {
-    // Developers only see projects where they have at least one bug assigned
-    const devName = (_sessionName || '').trim().toLowerCase();
-    const devBugs = state.bugs.filter(b => b.developer && b.developer.trim().toLowerCase() === devName);
-    const projectIds = new Set(devBugs.map(b => b.projectId));
-    return state.projects.filter(p => projectIds.has(p.id));
+    // Show all projects to developers so they can see what's active,
+    // even if they don't have bugs assigned yet.
+    return [...state.projects];
   }
+
   if (currentUserRole === 'tester') {
-    // Testers only see projects assigned to them (matched by name)
     const testerName = (_sessionName || '').trim().toLowerCase();
-    // Find this tester's ID by matching their name in state.testers
+
+    // 1. Exact ID match: find tester record whose name exactly matches session name
     const matchedTester = state.testers.find(t => t.name.trim().toLowerCase() === testerName);
     if (matchedTester) {
-      return state.projects.filter(p => p.testerId === matchedTester.id);
+      const projects = state.projects.filter(p => p.testerId === matchedTester.id);
+      // If admin assigned projects to this tester, show them
+      if (projects.length > 0) return projects;
     }
-    // Fallback: filter by name match in testerId field (legacy)
-    return state.projects.filter(p => {
-      const t = state.testers.find(t => t.id === p.testerId);
-      return t && t.name.trim().toLowerCase() === testerName;
+
+    // 2. Partial/flexible name match fallback (handles typos or abbreviated names)
+    const partialMatch = state.testers.find(t => {
+      const dbName = t.name.trim().toLowerCase();
+      return dbName.includes(testerName) || testerName.includes(dbName);
     });
+    if (partialMatch) {
+      const projects = state.projects.filter(p => p.testerId === partialMatch.id);
+      if (projects.length > 0) return projects;
+    }
+
+    // 3. Auto-register: tester not in testers list yet — show ALL projects so they
+    //    are not locked out. Admin should formally add them via the Testers page.
+    if (state.testers.length === 0 || !matchedTester) {
+      console.warn('Tester not found in testers list. Showing all projects as fallback.');
+      return [...state.projects];
+    }
+
+    return [];
   }
-  // Admin/HR sees all projects
+
+  // Admin/HR sees everything
   return [...state.projects];
 }
 
@@ -2083,14 +2098,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // Load cloud data asynchronously in the background
   tryFetchCloudState();
 
-  // ===== Auto-sync: poll MongoDB every 60s so all users see live updates =====
-  // Admin creates project on PC-A → Tester on PC-B sees it within 60 seconds.
+  // ===== Auto-sync: poll MongoDB every 10s regardless of dbOnline state =====
+  // Admin creates project on PC-A → Tester on PC-B sees it within 10 seconds.
   setInterval(async () => {
-    if (dbOnline) {
-      const success = await fetchCloudData();
-      if (success) { applyRoleUI(); renderAll(); }
-    }
-  }, 60000); // 60 seconds
+    const success = await fetchCloudData();
+    if (success) { applyRoleUI(); renderAll(); }
+  }, 10000); // 10 seconds for near real-time feel
 
   // ===== Logout =====
   document.getElementById('logoutBtn').addEventListener('click', () => {
