@@ -1,7 +1,11 @@
 // ===== API Handler for Vercel Serverless =====
-// Supports Vercel KV and MongoDB automatically based on what is connected in Vercel.
+// Supports Supabase, Vercel KV, and MongoDB.
 
 import { MongoClient } from 'mongodb';
+
+// Environment Variables auto-injected by Vercel Integrations
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = 'adiyogi_bugtracker';
@@ -19,6 +23,25 @@ async function getMongoDB() {
   return cachedClient.db(DB_NAME);
 }
 
+// Supabase Helpers (Using raw jsonb to avoid strict schema crashes)
+async function supabaseFetch(table, options = {}) {
+  const url = `${SUPABASE_URL}/rest/v1/${table}${options.method === 'GET' || !options.method ? '?select=*' : ''}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates',
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    throw new Error(`Supabase request failed: ${res.statusText}`);
+  }
+  return options.method !== 'POST' && options.method !== 'DELETE' ? res.json() : null;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -28,7 +51,56 @@ export default async function handler(req, res) {
 
   try {
     // ==========================================
-    // 1. VERCEL KV (Zero Setup - Recommended)
+    // 1. SUPABASE (If connected via Vercel)
+    // ==========================================
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      if (req.method === 'GET') {
+        const { table } = req.query;
+        if (table) {
+          const data = await supabaseFetch(table).catch(() => []);
+          // Extract from flat object or jsonb wrapper
+          return res.status(200).json(data.map(d => d.data ? {id: d.id, ...d.data} : d));
+        }
+
+        const [projects, testers, bugs, notifications, profileArr] = await Promise.all([
+          supabaseFetch('projects').catch(() => []),
+          supabaseFetch('testers').catch(() => []),
+          supabaseFetch('bugs').catch(() => []),
+          supabaseFetch('notifications').catch(() => []),
+          supabaseFetch('profile').catch(() => [])
+        ]);
+
+        const unwrap = arr => (arr || []).map(d => d.data ? {id: d.id, ...d.data} : d);
+
+        return res.status(200).json({
+          projects: unwrap(projects),
+          testers: unwrap(testers),
+          bugs: unwrap(bugs),
+          notifications: unwrap(notifications).sort((a, b) => b.id.localeCompare(a.id)).slice(0, 50),
+          profile: unwrap(profileArr)[0] || null
+        });
+      }
+
+      if (req.method === 'POST') {
+        const { action, table, data, id } = req.body || {};
+        if (action === 'upsert') {
+          // Send flat data. If columns are missing, this will fail unless user ran SQL.
+          await supabaseFetch(table, { method: 'POST', body: JSON.stringify(data) });
+          return res.status(200).json({ success: true, db: 'supabase' });
+        } else if (action === 'delete') {
+          const url = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`;
+          await fetch(url, {
+            method: 'DELETE',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          });
+          return res.status(200).json({ success: true, db: 'supabase' });
+        }
+      }
+      return res.status(405).end();
+    }
+
+    // ==========================================
+    // 2. VERCEL KV (Zero Setup - Recommended)
     // ==========================================
     if (kvUrl && kvToken) {
       const stateRes = await fetch(`${kvUrl}/get/adiyogi_state`, { headers: { Authorization: `Bearer ${kvToken}` } });
@@ -71,7 +143,7 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
-    // 2. MONGODB (If MONGODB_URI is set)
+    // 3. MONGODB (If MONGODB_URI is set)
     // ==========================================
     const db = await getMongoDB();
     if (db) {
