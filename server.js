@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { MongoClient } from 'mongodb';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
@@ -15,65 +15,74 @@ app.use(express.json());
 // Serve static frontend files from 'web' directory
 app.use(express.static(path.join(__dirname, 'web')));
 
-// Automatically use local MongoDB
-const MONGODB_URI = 'mongodb://127.0.0.1:27017';
-const DB_NAME = 'adiyogi_bugtracker';
-let db;
+// ===== Zero-Setup JSON Database =====
+// This removes the need for MongoDB entirely, ensuring 100% sync across PCs out of the box.
+const DB_FILE = path.join(__dirname, 'db.json');
 
-async function connectDB() {
-  try {
-    const client = new MongoClient(MONGODB_URI);
-    await client.connect();
-    db = client.db(DB_NAME);
-    console.log(`✅ Connected to Local MongoDB (${DB_NAME})`);
-  } catch (err) {
-    console.error('❌ Failed to connect to MongoDB. Is MongoDB installed and running on this PC?', err.message);
+// Initialize database file if it doesn't exist
+function initDB() {
+  if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({
+      projects: [], testers: [], bugs: [], notifications: [], profile: []
+    }, null, 2));
   }
 }
 
-connectDB();
+function readDB() {
+  initDB();
+  const data = fs.readFileSync(DB_FILE, 'utf-8');
+  return JSON.parse(data);
+}
+
+function writeDB(data) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
 
 // ===== API Endpoint for Database Operations =====
-app.all('/api/db', async (req, res) => {
-  if (!db) return res.status(500).json({ offline: true, message: 'MongoDB not running' });
-
+app.all('/api/db', (req, res) => {
   try {
+    const db = readDB();
+
     if (req.method === 'GET') {
       const { table } = req.query;
+      
       if (table) {
-        const data = await db.collection(table).find({}).toArray();
-        return res.status(200).json(data.map(({ _id, ...rest }) => rest));
+        return res.status(200).json(db[table] || []);
       }
 
-      const [projects, testers, bugs, notifications, profileArr] = await Promise.all([
-        db.collection('projects').find({}).toArray(),
-        db.collection('testers').find({}).toArray(),
-        db.collection('bugs').find({}).sort({ created: -1 }).toArray(),
-        db.collection('notifications').find({}).sort({ id: -1 }).limit(50).toArray(),
-        db.collection('profile').find({ id: 'hr_manager' }).toArray()
-      ]);
-
-      const strip = arr => arr.map(({ _id, ...rest }) => rest);
-
+      // Fetch all collections at once (initial load)
+      // Sort bugs by newest first, notifications by id desc
+      const sortedBugs = [...(db.bugs || [])].reverse();
+      const sortedNotifs = [...(db.notifications || [])].sort((a, b) => b.id.localeCompare(a.id)).slice(0, 50);
+      
       return res.status(200).json({
-        projects: strip(projects),
-        testers:  strip(testers),
-        bugs:     strip(bugs),
-        notifications: strip(notifications),
-        profile:  strip(profileArr)[0] || null
+        projects: db.projects || [],
+        testers: db.testers || [],
+        bugs: sortedBugs,
+        notifications: sortedNotifs,
+        profile: (db.profile && db.profile.length > 0) ? db.profile[0] : null
       });
     }
 
     if (req.method === 'POST') {
       const { action, table, data, id } = req.body || {};
       
+      if (!db[table]) db[table] = [];
+
       if (action === 'upsert') {
-        await db.collection(table).replaceOne({ id: data.id }, data, { upsert: true });
+        const index = db[table].findIndex(item => item.id === data.id);
+        if (index > -1) {
+          db[table][index] = data; // Update
+        } else {
+          db[table].push(data); // Insert
+        }
+        writeDB(db);
         return res.status(200).json({ success: true });
       }
 
       if (action === 'delete') {
-        await db.collection(table).deleteOne({ id });
+        db[table] = db[table].filter(item => item.id !== id);
+        writeDB(db);
         return res.status(200).json({ success: true });
       }
     }
@@ -86,19 +95,23 @@ app.all('/api/db', async (req, res) => {
 // Start Server and print IP addresses for other PCs to connect
 const PORT = 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 Adiyogi Bug Tracker Live Server is Running!`);
-  console.log(`\nAccess the app from this PC (Admin):`);
-  console.log(`👉 http://localhost:${PORT}`);
+  console.log(`\n==============================================`);
+  console.log(`🚀 Adiyogi Bug Tracker Live Server is Running!`);
+  console.log(`==============================================\n`);
   
-  console.log(`\nAccess the app from PC 2 (Tester) and PC 3 (Developer):`);
+  console.log(`💻 Access the app from THIS PC (Admin):`);
+  console.log(`   👉 http://localhost:${PORT}\n`);
+  
+  console.log(`🌐 Access the app from PC 2 & PC 3 (Type this exactly into their browser):`);
   const networkInterfaces = os.networkInterfaces();
   for (const interfaceName in networkInterfaces) {
     for (const net of networkInterfaces[interfaceName]) {
       // Skip internal and non-IPv4 addresses
       if (net.family === 'IPv4' && !net.internal) {
-        console.log(`👉 http://${net.address}:${PORT}`);
+        console.log(`   👉 http://${net.address}:${PORT}`);
       }
     }
   }
-  console.log('\nMake sure MongoDB is installed on this PC and running!');
+  console.log(`\n✅ Database is using local file sync (db.json). No MongoDB needed!`);
+  console.log(`⚠️  Leave this terminal open to keep the server running.`);
 });

@@ -1,111 +1,194 @@
-// ===== MongoDB API Handler for Vercel Serverless =====
-// Connection string is stored in MONGODB_URI environment variable on Vercel.
-// Frontend never sees the database credentials.
+// ===== API Handler for Vercel Serverless =====
+// Supports Supabase, MongoDB, and Vercel KV automatically based on what is connected in Vercel.
 
 import { MongoClient } from 'mongodb';
+
+// Environment Variables auto-injected by Vercel Integrations
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = 'adiyogi_bugtracker';
 
-// Reuse connection across warm invocations (Vercel caches module state)
+const kvUrl = process.env.KV_REST_API_URL;
+const kvToken = process.env.KV_REST_API_TOKEN;
+
 let cachedClient = null;
 
-async function getDB() {
+async function getMongoDB() {
   if (cachedClient) return cachedClient.db(DB_NAME);
-  if (!MONGODB_URI) throw new Error('MONGODB_URI environment variable is not set.');
+  if (!MONGODB_URI) return null;
   cachedClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
   await cachedClient.connect();
   return cachedClient.db(DB_NAME);
 }
 
+// Supabase Helpers
+async function supabaseFetch(table, options = {}) {
+  const url = `${SUPABASE_URL}/rest/v1/${table}${options.method === 'GET' || !options.method ? '?select=*' : ''}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates',
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`Supabase Error (${table}):`, text);
+    throw new Error(`Supabase request failed: ${res.statusText}`);
+  }
+  return options.method !== 'POST' && options.method !== 'DELETE' ? res.json() : null;
+}
+
 export default async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // If no MONGODB_URI configured, return offline signal gracefully
-  if (!MONGODB_URI) {
-    return res.status(200).json({ offline: true, message: 'MONGODB_URI not configured on server.' });
-  }
-
   try {
-    const db = await getDB();
+    // ==========================================
+    // 1. SUPABASE (If connected via Vercel)
+    // ==========================================
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      if (req.method === 'GET') {
+        const { table } = req.query;
+        if (table) {
+          const data = await supabaseFetch(table);
+          return res.status(200).json(data);
+        }
 
-    // ── GET: fetch all data or a single collection ─────────────────────────
-    if (req.method === 'GET') {
-      const { table } = req.query;
+        const [projects, testers, bugs, notifications, profileArr] = await Promise.all([
+          supabaseFetch('projects').catch(() => []),
+          supabaseFetch('testers').catch(() => []),
+          supabaseFetch('bugs').catch(() => []),
+          supabaseFetch('notifications').catch(() => []),
+          supabaseFetch('profile').catch(() => [])
+        ]);
 
-      if (table) {
-        const data = await db.collection(table).find({}).toArray();
-        // Remove MongoDB _id field before sending
-        return res.status(200).json(data.map(({ _id, ...rest }) => rest));
+        return res.status(200).json({
+          projects: projects || [],
+          testers: testers || [],
+          bugs: bugs || [],
+          notifications: (notifications || []).sort((a, b) => b.id.localeCompare(a.id)).slice(0, 50),
+          profile: profileArr && profileArr.length > 0 ? profileArr[0] : null
+        });
       }
 
-      // Fetch all collections at once (used on initial app load)
-      const [projects, testers, bugs, notifications, profileArr] = await Promise.all([
-        db.collection('projects').find({}).toArray(),
-        db.collection('testers').find({}).toArray(),
-        db.collection('bugs').find({}).sort({ created: -1 }).toArray(),
-        db.collection('notifications').find({}).sort({ id: -1 }).limit(50).toArray(),
-        db.collection('profile').find({ id: 'hr_manager' }).toArray()
-      ]);
-
-      const strip = arr => arr.map(({ _id, ...rest }) => rest);
-
-      return res.status(200).json({
-        projects: strip(projects),
-        testers:  strip(testers),
-        bugs:     strip(bugs),
-        notifications: strip(notifications),
-        profile:  strip(profileArr)[0] || null
-      });
+      if (req.method === 'POST') {
+        const { action, table, data, id } = req.body || {};
+        if (action === 'upsert') {
+          // Supabase upsert using Prefer: resolution=merge-duplicates
+          await supabaseFetch(table, { method: 'POST', body: JSON.stringify(data) });
+          return res.status(200).json({ success: true, db: 'supabase' });
+        } else if (action === 'delete') {
+          const url = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`;
+          await fetch(url, {
+            method: 'DELETE',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          });
+          return res.status(200).json({ success: true, db: 'supabase' });
+        }
+      }
+      return res.status(405).end();
     }
 
-    // ── POST: upsert or delete ─────────────────────────────────────────────
-    if (req.method === 'POST') {
-      const { action, table, data, id } = req.body || {};
+    // ==========================================
+    // 2. MONGODB (If MONGODB_URI is set)
+    // ==========================================
+    const db = await getMongoDB();
+    if (db) {
+      if (req.method === 'GET') {
+        const { table } = req.query;
+        if (table) {
+          const data = await db.collection(table).find({}).toArray();
+          return res.status(200).json(data.map(({ _id, ...rest }) => rest));
+        }
 
-      if (!action || !table) {
-        return res.status(400).json({ error: 'Missing action or table in request body.' });
+        const [projects, testers, bugs, notifications, profileArr] = await Promise.all([
+          db.collection('projects').find({}).toArray(),
+          db.collection('testers').find({}).toArray(),
+          db.collection('bugs').find({}).sort({ created: -1 }).toArray(),
+          db.collection('notifications').find({}).sort({ id: -1 }).limit(50).toArray(),
+          db.collection('profile').find({ id: 'hr_manager' }).toArray()
+        ]);
+
+        const strip = arr => arr.map(({ _id, ...rest }) => rest);
+        return res.status(200).json({
+          projects: strip(projects),
+          testers:  strip(testers),
+          bugs:     strip(bugs),
+          notifications: strip(notifications),
+          profile:  strip(profileArr)[0] || null
+        });
       }
 
-      if (action === 'upsert') {
-        if (!data || !data.id) return res.status(400).json({ error: 'data.id is required for upsert.' });
-        await db.collection(table).replaceOne(
-          { id: data.id },
-          data,
-          { upsert: true }
-        );
-        return res.status(200).json({ success: true });
+      if (req.method === 'POST') {
+        const { action, table, data, id } = req.body || {};
+        if (action === 'upsert') {
+          await db.collection(table).replaceOne({ id: data.id }, data, { upsert: true });
+          return res.status(200).json({ success: true, db: 'mongodb' });
+        } else if (action === 'delete') {
+          await db.collection(table).deleteOne({ id });
+          return res.status(200).json({ success: true, db: 'mongodb' });
+        }
       }
-
-      if (action === 'delete') {
-        if (!id) return res.status(400).json({ error: 'id is required for delete.' });
-        await db.collection(table).deleteOne({ id });
-        return res.status(200).json({ success: true });
-      }
-
-      if (action === 'deleteMany') {
-        // e.g. delete all bugs for a project
-        const { filter } = req.body;
-        await db.collection(table).deleteMany(filter || {});
-        return res.status(200).json({ success: true });
-      }
-
-      return res.status(400).json({ error: `Unknown action: ${action}` });
+      return res.status(405).end();
     }
 
-    return res.status(405).json({ error: 'Method not allowed' });
+    // ==========================================
+    // 3. VERCEL KV (Fallback)
+    // ==========================================
+    if (kvUrl && kvToken) {
+      const stateRes = await fetch(`${kvUrl}/get/adiyogi_state`, { headers: { Authorization: `Bearer ${kvToken}` } });
+      const stateData = await stateRes.json();
+      const state = (stateData && stateData.result ? JSON.parse(stateData.result) : null) || { projects: [], testers: [], bugs: [], notifications: [], profile: {} };
+
+      if (req.method === 'GET') {
+        const { table } = req.query;
+        if (table) return res.status(200).json(state[table] || []);
+        
+        return res.status(200).json({
+          projects: state.projects || [],
+          testers: state.testers || [],
+          bugs: state.bugs || [],
+          notifications: state.notifications || [],
+          profile: state.profile || null
+        });
+      }
+
+      if (req.method === 'POST') {
+        const { action, table, data, id } = req.body || {};
+        if (!state[table]) state[table] = [];
+
+        if (action === 'upsert') {
+          const index = state[table].findIndex(item => item.id === data.id);
+          if (index > -1) state[table][index] = data;
+          else state[table].push(data);
+        } else if (action === 'delete') {
+          state[table] = state[table].filter(item => item.id !== id);
+        }
+        
+        await fetch(`${kvUrl}/set/adiyogi_state`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${kvToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(JSON.stringify(state))
+        });
+        return res.status(200).json({ success: true, db: 'kv' });
+      }
+      return res.status(405).end();
+    }
+
+    // If none of the above are configured
+    return res.status(200).json({ offline: true, message: 'No Database Configured' });
 
   } catch (err) {
-    console.error('MongoDB handler error:', err);
-    // Reset cached client on connection errors so next request retries
-    if (err.name === 'MongoNetworkError' || err.name === 'MongoServerSelectionError') {
-      cachedClient = null;
-    }
+    console.error('API Error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
