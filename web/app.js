@@ -13,11 +13,13 @@ const currentUserRole = _sessionRole || 'hr'; // 'hr' | 'tester' | 'developer'
 const isHR = currentUserRole === 'hr';
 
 // ===== State Management =====
+// state.profile is the ADMIN's profile (stored in DB).
+// For display, we always use session data (_sessionName, _sessionRoleLabel) so each role sees their own name.
 let state = {
   projects: [],
   testers: [],
   profile: {
-    name: 'Himanshu Choudhary',
+    name: '',
     role: 'Admin',
     avatar: '' // Base64 data URL
   },
@@ -148,11 +150,11 @@ function loadState() {
   if (saved) {
     try {
       state = JSON.parse(saved);
-      // Migration: if the cached user name is the old default 'Ankit B.', reset to Himanshu Choudhary and clean dummy data
-      if (state.profile && (state.profile.name === 'Ankit B.' || !state.profile.name)) {
-        initializeDefaults();
-      }
       if (!state.bugs) state.bugs = [];
+      if (!state.testers) state.testers = [];
+      if (!state.projects) state.projects = [];
+      if (!state.notifications) state.notifications = [];
+      if (!state.profile) state.profile = { name: '', role: 'Admin', avatar: '' };
     } catch (e) {
       console.error('Failed to parse saved state, using defaults', e);
       initializeDefaults();
@@ -169,14 +171,14 @@ function loadState() {
 function initializeDefaults() {
   state.theme = 'dark';
   state.profile = {
-    name: 'Himanshu Choudhary',
-    role: 'HR Manager',
+    name: '',  // No hardcoded name — comes from session login
+    role: 'Admin',
     avatar: ''
   };
   state.testers = [];
   state.projects = [];
   state.notifications = [
-    { id: 'n1', type: 'info', text: 'Welcome to Adiyogi Bug Tracker Dashboard, Himanshu!', time: 'Just now', read: false }
+    { id: 'n1', type: 'info', text: 'Welcome to Adiyogi Bug Tracker! Connect Supabase to sync data globally.', time: 'Just now', read: false }
   ];
   state.bugs = [];
   saveState();
@@ -201,15 +203,18 @@ function initSupabase() {
 async function fetchCloudData() {
   if (!supabaseClient) return false;
   try {
-    // 1. Fetch Profile
-    const { data: profileData, error: profileErr } = await supabaseClient.from('profile').select('*');
-    if (!profileErr && profileData && profileData.length > 0) {
-      const p = profileData[0];
-      state.profile = {
-        name: p.name,
-        role: p.role,
-        avatar: p.avatar || ''
-      };
+    // 1. Fetch Profile (Admin profile stored in DB)
+    // state.profile holds the ADMIN's profile from DB. renderProfile() uses session data for display.
+    if (isHR) {
+      const { data: profileData, error: profileErr } = await supabaseClient.from('profile').select('*');
+      if (!profileErr && profileData && profileData.length > 0) {
+        const p = profileData[0];
+        state.profile = {
+          name: p.name,
+          role: p.role,
+          avatar: p.avatar || ''
+        };
+      }
     }
 
     // 2. Fetch Testers
@@ -454,24 +459,29 @@ function switchPage(pageId) {
 }
 
 // ===== Render User Profile =====
+// IMPORTANT: Always display the LOGGED-IN USER's name/role from session, not state.profile (admin's).
+// state.profile is the admin's editable profile stored in DB.
+// For non-admin users the sidebar/topbar must show their own session identity.
 function renderProfile() {
-  const name = state.profile.name || 'HR Manager';
-  const role = state.profile.role || 'Administrator';
-  const avatar = state.profile.avatar || '';
+  // Use session name/role for display — works for all roles
+  const displayName = _sessionName || state.profile.name || 'User';
+  const displayRole = _sessionRoleLabel || state.profile.role || 'Member';
+  // Avatar: only admin has an editable avatar stored in state.profile
+  const avatar = isHR ? (state.profile.avatar || '') : '';
 
-  const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
 
   const sidebarName = document.getElementById('sidebarUserName');
   const sidebarRole = document.getElementById('sidebarUserRole');
   const sidebarAvatar = document.getElementById('sidebarUserAvatar');
   
-  if (sidebarName) sidebarName.textContent = name;
-  if (sidebarRole) sidebarRole.textContent = role;
+  if (sidebarName) sidebarName.textContent = displayName;
+  if (sidebarRole) sidebarRole.textContent = displayRole;
 
   const topName = document.getElementById('topUserName');
   const topAvatar = document.getElementById('topUserAvatar');
 
-  if (topName) topName.textContent = name;
+  if (topName) topName.textContent = displayName;
 
   if (avatar) {
     if (sidebarAvatar) {
@@ -980,7 +990,8 @@ function renderProjectDetailsView(projectId) {
   // Calculate statistics
   let projectBugs = state.bugs.filter(b => b.projectId === projectId);
   if (currentUserRole === 'developer') {
-    projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+    const devName = (_sessionName || '').trim().toLowerCase();
+    projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === devName);
   }
   const totalBugs = projectBugs.length;
 
@@ -1024,10 +1035,11 @@ function renderProjectBugsList(projectId) {
   const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
   const typeFilter = document.getElementById('bugTypeFilter').value;
 
-  // Filter project bugs
+  // Filter project bugs (role-based)
   let projectBugs = state.bugs.filter(b => b.projectId === projectId);
   if (currentUserRole === 'developer') {
-    projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+    const devName = (_sessionName || '').trim().toLowerCase();
+    projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === devName);
   }
 
   // Apply Status Filter
@@ -1240,13 +1252,12 @@ function openBugModal(projectId, bugId = null) {
 
   if (!modal) return;
 
-  // Populate developer dropdown dynamically
+  // Populate developer dropdown dynamically from testers/team list
   const devSelect = document.getElementById('bugDeveloper');
   if (devSelect) {
     let optionsHtml = '<option value="Unassigned">Unassigned</option>';
-    optionsHtml += '<option value="Himanshu Choudhary">Himanshu Choudhary</option>';
     
-    // Add all testers/developers from state.testers
+    // Add all team members from state.testers (includes developers auto-registered)
     state.testers.forEach(t => {
       optionsHtml += `<option value="${t.name}">${t.name} (${t.role})</option>`;
     });
@@ -1543,10 +1554,11 @@ function renderRecentProjects() {
     if (p.status === 'In Progress') statusClass = 'in-progress';
     if (p.status === 'Completed') statusClass = 'completed';
 
-    // Count bugs
+    // Count bugs (role-based filtering)
     let projectBugs = state.bugs.filter(b => b.projectId === p.id);
     if (currentUserRole === 'developer') {
-      projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+      const devName = (_sessionName || '').trim().toLowerCase();
+      projectBugs = projectBugs.filter(b => b.developer && b.developer.trim().toLowerCase() === devName);
     }
     const pendingBugs = projectBugs.filter(b => b.status === 'Pending' || b.status === 'Re-open').length;
 
@@ -1601,11 +1613,27 @@ let activeFilter = 'all';
 
 function getVisibleProjects() {
   if (currentUserRole === 'developer') {
-    // Only projects that have at least one bug assigned to this developer
-    const devBugs = state.bugs.filter(b => b.developer && b.developer.trim().toLowerCase() === state.profile.name.trim().toLowerCase());
+    // Developers only see projects where they have at least one bug assigned
+    const devName = (_sessionName || '').trim().toLowerCase();
+    const devBugs = state.bugs.filter(b => b.developer && b.developer.trim().toLowerCase() === devName);
     const projectIds = new Set(devBugs.map(b => b.projectId));
     return state.projects.filter(p => projectIds.has(p.id));
   }
+  if (currentUserRole === 'tester') {
+    // Testers only see projects assigned to them (matched by name)
+    const testerName = (_sessionName || '').trim().toLowerCase();
+    // Find this tester's ID by matching their name in state.testers
+    const matchedTester = state.testers.find(t => t.name.trim().toLowerCase() === testerName);
+    if (matchedTester) {
+      return state.projects.filter(p => p.testerId === matchedTester.id);
+    }
+    // Fallback: filter by name match in testerId field (legacy)
+    return state.projects.filter(p => {
+      const t = state.testers.find(t => t.id === p.testerId);
+      return t && t.name.trim().toLowerCase() === testerName;
+    });
+  }
+  // Admin/HR sees all projects
   return [...state.projects];
 }
 
@@ -2073,15 +2101,6 @@ function applyRoleUI() {
   const role = currentUserRole;
   const roleBadge = document.getElementById('roleBadge');
 
-  // ── Patch state.profile with session data so renderProfile() picks up the
-  //    correct name & role for both HR/Admin, Tester and Developer logins ────
-  if (_sessionName) {
-    state.profile.name = _sessionName;
-  }
-  if (_sessionRoleLabel) {
-    state.profile.role = _sessionRoleLabel;
-  }
-
   // Update role badge text and color
   if (roleBadge) {
     if (role === 'hr') {
@@ -2127,10 +2146,11 @@ function applyRoleUI() {
   }
 
   // Auto-register developer in the testers/team list if not already there
-  if (role === 'developer' && state.profile.name) {
-    const devName = state.profile.name;
+  // Uses SESSION name so developer sees their own name, not the admin's
+  if (role === 'developer' && _sessionName) {
+    const devName = _sessionName.trim();
     const devSpecialty = sessionStorage.getItem('ayt_dev_specialty') || 'Web Developer';
-    const exists = state.testers.some(t => t.name.trim().toLowerCase() === devName.trim().toLowerCase());
+    const exists = state.testers.some(t => t.name.trim().toLowerCase() === devName.toLowerCase());
     if (!exists) {
       const newDevTester = {
         id: 'dev_' + Date.now(),
@@ -2146,32 +2166,44 @@ function applyRoleUI() {
 }
 
 // ===== Asynchronous Cloud Fetching =====
+// Supabase is the PRIMARY global database — all roles read/write from the same Supabase project.
+// This ensures: when Admin creates a project or tester in Supabase, testers/devs see it immediately.
 async function tryFetchCloudState() {
-  try {
-    // Try fetching Vercel KV state
-    const gotServerState = await fetchServerState();
-    if (gotServerState) {
-      showToast('State loaded from Vercel KV cloud!', 'success');
-      renderAll();
-      return;
-    }
-  } catch (e) {
-    console.warn('Vercel KV fetch failed/bypassed', e);
-  }
-
-  // Fallback: Try connecting to Supabase database
+  // PRIORITY 1: Supabase (global shared DB — required for multi-user role visibility)
   try {
     const connected = initSupabase();
     if (connected) {
+      showToast('Connecting to cloud database...', 'info');
       const success = await fetchCloudData();
       if (success) {
-        showToast('Cloud Database Connected & Synced!', 'success');
+        // After cloud fetch, apply role-specific overrides to profile display
+        applyRoleUI();
         renderAll();
+        showToast('✓ Cloud database synced — data is live!', 'success');
+        return;
+      } else {
+        showToast('Cloud DB connected but data pull failed. Check SQL schema.', 'warning');
       }
     }
   } catch (e) {
-    console.warn('Supabase fetch failed/bypassed', e);
+    console.warn('Supabase fetch failed:', e);
   }
+
+  // PRIORITY 2: Vercel KV fallback (single-user only, no role separation)
+  try {
+    const gotServerState = await fetchServerState();
+    if (gotServerState) {
+      applyRoleUI();
+      renderAll();
+      showToast('State loaded from server cache.', 'info');
+      return;
+    }
+  } catch (e) {
+    console.warn('Vercel KV fetch failed:', e);
+  }
+
+  // PRIORITY 3: LocalStorage only (offline/no-db mode)
+  showToast('Running in local mode. Connect Supabase for multi-user sync.', 'warning');
 }
 
 // ===== Page Initialization =====

@@ -335,9 +335,9 @@
         let selectedRole = 'hr';
 
         const CREDENTIALS = {
-            hr:        { mobile: '9876543210', password: 'AYT@1234',    defaultName: 'Himanshu Choudhary', roleLabel: 'Admin' },
-            tester:    { mobile: '1234567890', password: 'Tester@1234', defaultName: '',                   roleLabel: 'Tester' },
-            developer: { mobile: '1234567899', password: 'Developer@1234', defaultName: '',                roleLabel: 'Developer' }
+            hr:        { mobile: '9876543210', password: 'AYT@1234',    roleLabel: 'Admin' },
+            tester:    { mobile: '1234567890', password: 'Tester@1234', roleLabel: 'Tester' },
+            developer: { mobile: '1234567899', password: 'Developer@1234', roleLabel: 'Developer' }
         };
 
         function selectRole(role) {
@@ -354,8 +354,8 @@
             const devTypeGroup = document.getElementById('devTypeGroup');
 
             if (role === 'hr') {
-                nameInput.value = CREDENTIALS.hr.defaultName;
-                nameInput.placeholder = 'Admin Name';
+                nameInput.value = '';
+                nameInput.placeholder = 'Enter admin full name';
                 nameLabel.innerHTML = 'Admin Name <span style="color:var(--red);">*</span>';
                 devTypeGroup.style.display = 'none';
             } else if (role === 'developer') {
