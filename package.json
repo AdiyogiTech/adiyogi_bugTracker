@@ -5,7 +5,12 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "mongodb": "^6.3.0"
+  },
+  "scripts": {
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18"
