@@ -1,11 +1,7 @@
 // ===== API Handler for Vercel Serverless =====
-// Supports Supabase, MongoDB, and Vercel KV automatically based on what is connected in Vercel.
+// Supports Vercel KV and MongoDB automatically based on what is connected in Vercel.
 
 import { MongoClient } from 'mongodb';
-
-// Environment Variables auto-injected by Vercel Integrations
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = 'adiyogi_bugtracker';
@@ -23,27 +19,6 @@ async function getMongoDB() {
   return cachedClient.db(DB_NAME);
 }
 
-// Supabase Helpers
-async function supabaseFetch(table, options = {}) {
-  const url = `${SUPABASE_URL}/rest/v1/${table}${options.method === 'GET' || !options.method ? '?select=*' : ''}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates',
-      ...(options.headers || {})
-    }
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    console.error(`Supabase Error (${table}):`, text);
-    throw new Error(`Supabase request failed: ${res.statusText}`);
-  }
-  return options.method !== 'POST' && options.method !== 'DELETE' ? res.json() : null;
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -53,47 +28,44 @@ export default async function handler(req, res) {
 
   try {
     // ==========================================
-    // 1. SUPABASE (If connected via Vercel)
+    // 1. VERCEL KV (Zero Setup - Recommended)
     // ==========================================
-    if (SUPABASE_URL && SUPABASE_KEY) {
+    if (kvUrl && kvToken) {
+      const stateRes = await fetch(`${kvUrl}/get/adiyogi_state`, { headers: { Authorization: `Bearer ${kvToken}` } });
+      const stateData = await stateRes.json();
+      const state = (stateData && stateData.result ? JSON.parse(stateData.result) : null) || { projects: [], testers: [], bugs: [], notifications: [], profile: {} };
+
       if (req.method === 'GET') {
         const { table } = req.query;
-        if (table) {
-          const data = await supabaseFetch(table);
-          return res.status(200).json(data);
-        }
-
-        const [projects, testers, bugs, notifications, profileArr] = await Promise.all([
-          supabaseFetch('projects').catch(() => []),
-          supabaseFetch('testers').catch(() => []),
-          supabaseFetch('bugs').catch(() => []),
-          supabaseFetch('notifications').catch(() => []),
-          supabaseFetch('profile').catch(() => [])
-        ]);
-
+        if (table) return res.status(200).json(state[table] || []);
+        
         return res.status(200).json({
-          projects: projects || [],
-          testers: testers || [],
-          bugs: bugs || [],
-          notifications: (notifications || []).sort((a, b) => b.id.localeCompare(a.id)).slice(0, 50),
-          profile: profileArr && profileArr.length > 0 ? profileArr[0] : null
+          projects: state.projects || [],
+          testers: state.testers || [],
+          bugs: state.bugs || [],
+          notifications: state.notifications || [],
+          profile: state.profile || null
         });
       }
 
       if (req.method === 'POST') {
         const { action, table, data, id } = req.body || {};
+        if (!state[table]) state[table] = [];
+
         if (action === 'upsert') {
-          // Supabase upsert using Prefer: resolution=merge-duplicates
-          await supabaseFetch(table, { method: 'POST', body: JSON.stringify(data) });
-          return res.status(200).json({ success: true, db: 'supabase' });
+          const index = state[table].findIndex(item => item.id === data.id);
+          if (index > -1) state[table][index] = data;
+          else state[table].push(data);
         } else if (action === 'delete') {
-          const url = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`;
-          await fetch(url, {
-            method: 'DELETE',
-            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-          });
-          return res.status(200).json({ success: true, db: 'supabase' });
+          state[table] = state[table].filter(item => item.id !== id);
         }
+        
+        await fetch(`${kvUrl}/set/adiyogi_state`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${kvToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(JSON.stringify(state))
+        });
+        return res.status(200).json({ success: true, db: 'kv' });
       }
       return res.status(405).end();
     }
@@ -137,49 +109,6 @@ export default async function handler(req, res) {
           await db.collection(table).deleteOne({ id });
           return res.status(200).json({ success: true, db: 'mongodb' });
         }
-      }
-      return res.status(405).end();
-    }
-
-    // ==========================================
-    // 3. VERCEL KV (Fallback)
-    // ==========================================
-    if (kvUrl && kvToken) {
-      const stateRes = await fetch(`${kvUrl}/get/adiyogi_state`, { headers: { Authorization: `Bearer ${kvToken}` } });
-      const stateData = await stateRes.json();
-      const state = (stateData && stateData.result ? JSON.parse(stateData.result) : null) || { projects: [], testers: [], bugs: [], notifications: [], profile: {} };
-
-      if (req.method === 'GET') {
-        const { table } = req.query;
-        if (table) return res.status(200).json(state[table] || []);
-        
-        return res.status(200).json({
-          projects: state.projects || [],
-          testers: state.testers || [],
-          bugs: state.bugs || [],
-          notifications: state.notifications || [],
-          profile: state.profile || null
-        });
-      }
-
-      if (req.method === 'POST') {
-        const { action, table, data, id } = req.body || {};
-        if (!state[table]) state[table] = [];
-
-        if (action === 'upsert') {
-          const index = state[table].findIndex(item => item.id === data.id);
-          if (index > -1) state[table][index] = data;
-          else state[table].push(data);
-        } else if (action === 'delete') {
-          state[table] = state[table].filter(item => item.id !== id);
-        }
-        
-        await fetch(`${kvUrl}/set/adiyogi_state`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${kvToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(JSON.stringify(state))
-        });
-        return res.status(200).json({ success: true, db: 'kv' });
       }
       return res.status(405).end();
     }
